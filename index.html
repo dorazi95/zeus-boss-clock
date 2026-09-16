@@ -260,8 +260,7 @@
 
       <div class="pcbar" id="pcbar" hidden>
     <button class="chip" id="pcOpen" type="button">PC 위젯 열기</button>
-    <a class="chip" id="pcGet" href="https://github.com/dorazi95/zeus-boss-clock/raw/main/boss-clock.zip">PC 위젯 내려받기</a>
-    <span class="pchint">항상 위에 뜨는 작은 창입니다. 처음 쓰는 PC라면 내려받아 압축을 풀고 <b>위젯 링크 등록.cmd</b>를 한 번 실행해야 이 버튼이 동작합니다.</span>
+    <span class="pchint" id="pcHint">화면 위에 항상 떠 있는 작은 시계입니다. 컷은 여기 웹에서 누르고, 위젯은 같은 시간을 보여줍니다.</span>
   </div>
 
   <p class="foot">
@@ -838,12 +837,40 @@
     });
   } catch (e) { /* 구형 브라우저 */ }
 
-  // PC 위젯 열기 — 윈도우에 등록된 bossclock:// 링크로 실행한다 (브라우저가 직접 실행할 수는 없다)
+  // PC 위젯 열기 — 브라우저는 프로그램을 직접 실행할 수 없어서 bossclock:// 링크로 연다.
+  // 그 링크가 등록돼 있지 않으면(=아직 설치 전) 설치 파일을 대신 받아준다.
   var pcbar = document.getElementById('pcbar');
   if (/Windows NT/.test(navigator.userAgent)) {
     pcbar.hidden = false;
+    var pcHint = document.getElementById('pcHint');
     document.getElementById('pcOpen').addEventListener('click', function () {
-      location.href = 'bossclock://open';
+      var left = false;
+      function onLeave() { left = true; }
+      window.addEventListener('blur', onLeave);
+      document.addEventListener('visibilitychange', onLeave);
+
+      var frame = document.createElement('iframe');
+      frame.style.display = 'none';
+      frame.src = 'bossclock://open';
+      document.body.appendChild(frame);
+
+      setTimeout(function () {
+        window.removeEventListener('blur', onLeave);
+        document.removeEventListener('visibilitychange', onLeave);
+        frame.remove();
+        if (left || document.hidden) return;   // 위젯이 떴다
+        // 아직 설치 전 — 설치 파일을 받아준다 (한 번만 하면 된다)
+        pcHint.innerHTML = '이 PC에는 위젯이 아직 없어서 <b>설치 파일을 받았습니다.</b> ' +
+          '내려받은 <b>boss-clock-install.cmd</b> 를 실행하면 위젯이 바로 뜨고, ' +
+          '다음부터는 이 버튼만 누르면 켜집니다. ' +
+          '(윈도우가 경고하면 추가 정보 → 실행)';
+        var a = document.createElement('a');
+        a.href = 'boss-clock-install.cmd';
+        a.download = 'boss-clock-install.cmd';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, 1600);
     });
   }
 
