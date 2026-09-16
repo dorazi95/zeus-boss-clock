@@ -859,17 +859,10 @@
         document.removeEventListener('visibilitychange', onLeave);
         frame.remove();
         if (left || document.hidden) return;   // 위젯이 떴다
-        // 아직 설치 전 — 설치 파일을 받아준다 (한 번만 하면 된다)
-        pcHint.innerHTML = '이 PC에는 위젯이 아직 없어서 <b>설치 파일을 받았습니다.</b> ' +
-          '내려받은 <b>boss-clock-install.cmd</b> 를 실행하면 위젯이 바로 뜨고, ' +
-          '다음부터는 이 버튼만 누르면 켜집니다. ' +
-          '(윈도우가 경고하면 추가 정보 → 실행)';
-        var a = document.createElement('a');
-        a.href = 'boss-clock-install.cmd';
-        a.download = 'boss-clock-install.cmd';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        // 아직 설치 전일 때만 안내 — 한 번 설치하면 이 버튼만으로 열린다
+        pcHint.innerHTML = '위젯이 안 열렸다면 이 PC에 아직 설치가 안 된 것입니다. ' +
+          '<a href="boss-clock-install.cmd" download>설치 파일 받기</a> → 받은 파일 실행 ' +
+          '(윈도우가 경고하면 추가 정보 → 실행). 그 뒤로는 이 버튼만 누르면 켜지고, 위젯은 켤 때마다 알아서 최신이 됩니다.';
       }, 1600);
     });
   }
