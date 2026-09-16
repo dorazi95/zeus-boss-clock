@@ -224,6 +224,9 @@
         <div class="brand">제우스 보스 시계 <span>오만의 신</span></div>
         <span class="clock" id="clock">--:--:--</span>
         <button class="chip" id="undoBtn" type="button" hidden>되돌리기</button>
+        <button class="chip" id="soundBtn" type="button" aria-pressed="false">
+          <span class="dot"></span><span id="soundLabel">소리 끔</span>
+        </button>
         <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">다크 모드</span></button>
       </header>
@@ -254,7 +257,7 @@
       <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         보스는 젠 시각이 지나면 <b>출현 중</b>으로 계속 남아 있습니다. 잡은 뒤 <b>컷</b>을 눌러야 다음 젠을 다시 셉니다.<br>
-        <b>연필</b> 버튼으로 게임 현황판의 남은 시간을 그대로 넣어 맞출 수 있습니다.<br>
+        <b>연필</b> 버튼으로 게임 현황판의 남은 시간을 그대로 넣어 맞출 수 있습니다. <b>소리 켬</b>으로 두면 출현 5분 전에 "보스명 5분 전입니다"라고 알려줍니다.<br>
         <b>컷 시간은 이 링크를 쓰는 모두가 같이 봅니다.</b> 누가 컷을 누르면 몇 초 안에 전원 화면에 반영됩니다. 잘못 눌렀으면 위의 되돌리기를 누르면 됩니다(1분 안에).
         체크박스·테마·창 모드는 각자 브라우저에만 저장됩니다.
       </p>
@@ -290,7 +293,7 @@
   var KEY = 'zeus-boss-clock-v1';
   var STRIP_COUNT = 6;
 
-  var state = { theme: 'auto', bosses: null };
+  var state = { theme: 'auto', sound: false, bosses: null };
 
   function clone(list) {
     return list.map(function (b) {
@@ -308,6 +311,7 @@
     try { saved = JSON.parse(raw); } catch (e) { return; }
     if (!saved) return;
     if (saved.theme === 'light' || saved.theme === 'dark' || saved.theme === 'auto') state.theme = saved.theme;
+    if (typeof saved.sound === 'boolean') state.sound = saved.sound;
     if (!saved.bosses) return;
     state.bosses.forEach(function (b) {
       var s = saved.bosses[b.n];
@@ -320,11 +324,58 @@
   }
 
   function save() {
-    var out = { theme: state.theme, bosses: {} };
+    var out = { theme: state.theme, sound: state.sound, bosses: {} };
     state.bosses.forEach(function (b) {
       out.bosses[b.n] = { at: b.at, cyc: b.cyc, kill: b.kill, on: b.on };
     });
     try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) { /* 저장 불가 환경 */ }
+  }
+
+  // ---------- 5분 전 음성 알림 ----------
+  var warned = {}, primed = false, audioCtx = null;
+
+  function beep() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      var t0 = audioCtx.currentTime;
+      [0, 0.18].forEach(function (off) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, t0 + off);
+        g.gain.exponentialRampToValueAtTime(0.25, t0 + off + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.14);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(t0 + off); o.stop(t0 + off + 0.16);
+      });
+    } catch (e) { /* 소리 불가 환경 */ }
+  }
+
+  function speak(text) {
+    try {
+      if (window.speechSynthesis) {
+        var u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ko-KR';
+        u.rate = 1;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) { /* 음성 불가 환경 */ }
+  }
+
+  function announce(name) {
+    beep();
+    setTimeout(function () { speak(name + ' 5분 전입니다'); }, 420);
+  }
+
+  function checkAlert(it, left) {
+    var k = it.b.n + '|' + it.t.getTime();
+    if (left > 300000 || left <= 0) return;
+    if (warned[k]) return;
+    warned[k] = true;
+    if (primed && state.sound) announce(it.b.n);
   }
 
   // ---------- 공유 저장소 (컷 시간은 모두가 같은 값을 본다) ----------
@@ -487,6 +538,8 @@
   var shareChip = document.getElementById('shareChip');
   var shareLabel = document.getElementById('shareLabel');
   var undoBtn = document.getElementById('undoBtn');
+  var soundBtn = document.getElementById('soundBtn');
+  var soundLabel = document.getElementById('soundLabel');
   var cache = {}, stripCache = {}, lastOrder = '', lastStrip = '', headBoss = null;
 
   function buildRow(b) {
@@ -599,7 +652,9 @@
       row.classList.toggle('up', it.up);
       row.classList.toggle('warn', warn);
       row._rem.textContent = it.up ? '출현 중 +' + fmtLong(now - it.t) : fmtLong(left);
+      if (it.b.on) checkAlert(it, left);
     });
+    primed = true;
 
     // 체크된 보스만 — 다음 보스 / 목록
     var shown = all.filter(function (it) { return it.b.on; }).sort(byTime);
@@ -648,7 +703,7 @@
       els.miniCut.hidden = !(head.b.type === 'cycle' && (head.up || warn));
 
       // 브라우저 탭에도 다음 보스를 띄운다 (탭이 좁을 때를 생각해 시간을 앞에)
-      var title = timeTxt + ' · ' + head.b.n;
+      var title = head.b.n + ' · ' + timeTxt;
       if (document.title !== title) document.title = title;
     } else {
       els.nextName.textContent = '표시할 보스 없음';
@@ -696,6 +751,21 @@
     themeLabel.textContent = dark ? '일반 모드' : '다크 모드';
     themeBtn.setAttribute('aria-label', dark ? '일반 모드로 전환' : '다크 모드로 전환');
   }
+  function paintSound() {
+    soundBtn.setAttribute('aria-pressed', state.sound ? 'true' : 'false');
+    soundLabel.textContent = state.sound ? '소리 켬' : '소리 끔';
+    soundBtn.title = state.sound
+      ? '출현 5분 전에 소리와 음성으로 알립니다'
+      : '소리 알림이 꺼져 있습니다';
+  }
+  soundBtn.addEventListener('click', function () {
+    state.sound = !state.sound;
+    paintSound(); save();
+    // 브라우저가 소리를 막지 않도록 버튼을 누른 이 순간에 한 번 울려 둔다
+    if (state.sound) { beep(); setTimeout(function () { speak('소리 알림 켜짐'); }, 300); }
+    else { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) { /* 무시 */ } }
+  });
+
   themeBtn.addEventListener('click', function () {
     var dark = state.theme === 'dark' || (state.theme === 'auto' && systemDark());
     state.theme = dark ? 'light' : 'dark';
@@ -753,7 +823,7 @@
     });
   } catch (e) { /* 구형 브라우저 */ }
 
-  load(); paintTheme(); applyMode(); tick();
+  load(); paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
   setInterval(tick, 1000);
 })();
