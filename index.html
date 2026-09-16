@@ -272,6 +272,7 @@
     { n: '아라크네',         lv: 50, loc: '테살리아',          type: 'weekly', wd: 3, hour: 21 },
     { n: '케르베로스',       lv: 75, loc: '타르타로스 5계',    type: 'weekly', wd: 5, hour: 21 },
     { n: '키메라',           lv: 60, loc: '타르타로스 4계',    type: 'weekly', wd: 6, hour: 21 },
+    { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', hours: [12, 20] },
     { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:43:40' },
     { n: '아모르포스',       lv: 35, loc: '침식된 경작지',     type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:45:40' },
     { n: '트라손',           lv: 40, loc: '고대 신전 유적지',  type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:47:40' },
@@ -294,7 +295,7 @@
   function clone(list) {
     return list.map(function (b) {
       return { n: b.n, lv: b.lv, loc: b.loc, type: b.type, wd: b.wd, hour: b.hour,
-               cyc: b.cyc, kill: b.kill, at: b.at, on: b.on !== false };
+               hours: b.hours, cyc: b.cyc, kill: b.kill, at: b.at, on: b.on !== false };
     });
   }
 
@@ -417,6 +418,18 @@
   }
 
   // 주간 보스는 젠되는 순간 바로 잡히는 것으로 보고 다음 주로 넘긴다 — 컷을 칠 일이 없다
+  // 매일 정해진 시각에 열리는 콘텐츠 — 시각이 지나면 바로 다음 회차로 넘어간다
+  function nextDaily(b, now) {
+    var best = null;
+    for (var day = 0; day <= 1; day++) {
+      for (var i = 0; i < b.hours.length; i++) {
+        var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + day, b.hours[i], 0, 0, 0);
+        if (d > now && (!best || d < best)) best = d;
+      }
+    }
+    return best;
+  }
+
   function nextWeekly(b, now) {
     var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), b.hour, 0, 0, 0);
     d.setDate(d.getDate() + ((b.wd - now.getDay() + 7) % 7));
@@ -426,6 +439,7 @@
 
   function spawnOf(b, now) {
     if (b.type === 'weekly') return nextWeekly(b, now);
+    if (b.type === 'daily') return nextDaily(b, now);
     if (!b.at) return null;
     var t = new Date(b.at);
     if (isNaN(t)) return null;
@@ -488,7 +502,7 @@
       el.classList.toggle('hidden-boss', !b.on);
       save(); lastStrip = ''; tick();
     });
-    el.querySelector('.lv').textContent = b.lv;
+    el.querySelector('.lv').textContent = b.lv ? b.lv : '—';
     el.querySelector('.nm').textContent = b.n;
     el.querySelector('.loc').textContent = b.loc;
     el.classList.toggle('hidden-boss', !b.on);
@@ -503,9 +517,11 @@
       edit.addEventListener('click', function () { openSheet(b); });
       acts.appendChild(cut); acts.appendChild(edit);
     } else {
-      // 주간 보스는 컷을 치지 않는다. 젠 시각이 지나는 순간 다음 주로 자동으로 넘어간다.
+      // 주간·일일 콘텐츠는 컷을 치지 않는다. 시각이 지나는 순간 다음 회차로 자동으로 넘어간다.
       acts.className = 'when';
-      acts.textContent = '자동 · ' + WD[b.wd] + ' ' + b.hour + '시';
+      acts.textContent = (b.type === 'daily')
+        ? ('자동 · 매일 ' + b.hours.join('·') + '시')
+        : ('자동 · ' + WD[b.wd] + ' ' + b.hour + '시');
     }
     el._rem = el.querySelector('.rem');
     return el;
@@ -515,7 +531,7 @@
     var el = document.createElement('div');
     el.className = 'srow';
     el.innerHTML = '<div class="lv"></div><div class="nm"></div><div class="tm"></div>';
-    el.querySelector('.lv').textContent = b.lv;
+    el.querySelector('.lv').textContent = b.lv ? b.lv : '—';
     el.querySelector('.nm').textContent = b.n;
     el._tm = el.querySelector('.tm');
     if (b.type === 'cycle') {
@@ -614,7 +630,9 @@
       var noteTxt = head.up ? ('출현한 지 ' + fmtLong(now - head.t) + ' 지났습니다')
         : (head.b.type === 'weekly'
             ? ('매주 ' + WD[head.b.wd] + '요일 ' + head.b.hour + '시 · 컷 없이 자동')
-            : ('젠 주기 ' + head.b.cyc + '시간'));
+            : head.b.type === 'daily'
+              ? ('매일 ' + head.b.hours.join('시, ') + '시 · 컷 없이 자동')
+              : ('젠 주기 ' + head.b.cyc + '시간'));
       els.nextName.textContent = head.b.n;
       els.nextLoc.textContent = 'Lv.' + head.b.lv + ' · ' + head.b.loc;
       els.nextTime.textContent = timeTxt;
