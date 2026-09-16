@@ -330,6 +330,22 @@
     try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) { /* 저장 불가 환경 */ }
   }
 
+  // ---------- 새 버전 자동 반영 ----------
+  // 페이지 코드는 열 때 받은 파일로 계속 돌아가므로, 파일이 바뀌었는지 주기적으로 확인해 스스로 새로고침한다.
+  var myTag = null;
+  function checkUpdate() {
+    try {
+      fetch(location.pathname + '?v=' + Date.now(), { method: 'HEAD', cache: 'no-store' })
+        .then(function (r) {
+          var tag = r.headers.get('etag') || r.headers.get('last-modified');
+          if (!tag) return;
+          if (!myTag) { myTag = tag; return; }
+          if (tag !== myTag && !scrim) location.reload();
+        })
+        .catch(function () { /* 오프라인 */ });
+    } catch (e) { /* 무시 */ }
+  }
+
   // ---------- 5분 전 음성 알림 ----------
   var warned = {}, primed = false, audioCtx = null;
 
@@ -814,5 +830,7 @@
   load(); paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
   setInterval(tick, 1000);
+  checkUpdate();
+  setInterval(checkUpdate, 180000);
 })();
 </script>
