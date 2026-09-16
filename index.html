@@ -223,6 +223,8 @@
       <header class="topbar">
         <div class="brand">제우스 보스 시계 <span>오만의 신</span></div>
         <span class="clock" id="clock">--:--:--</span>
+        <button class="chip" id="undoBtn" type="button" hidden>되돌리기</button>
+        <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">밝은 모드</span></button>
       </header>
 
@@ -252,7 +254,9 @@
       <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         보스는 젠 시각이 지나면 <b>출현 중</b>으로 계속 남아 있습니다. 잡은 뒤 <b>컷</b>을 눌러야 다음 젠을 다시 셉니다.<br>
-        <b>연필</b> 버튼으로 게임 현황판의 남은 시간을 그대로 넣어 맞출 수 있습니다. 기록은 이 브라우저에만 저장됩니다.
+        <b>연필</b> 버튼으로 게임 현황판의 남은 시간을 그대로 넣어 맞출 수 있습니다.<br>
+        <b>컷 시간은 이 링크를 쓰는 모두가 같이 봅니다.</b> 누가 컷을 누르면 몇 초 안에 전원 화면에 반영됩니다. 잘못 눌렀으면 위의 되돌리기를 누르면 됩니다(1분 안에).
+        체크박스·테마·창 모드는 각자 브라우저에만 저장됩니다.
       </p>
     </div>
   </div>
@@ -322,6 +326,90 @@
     try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) { /* 저장 불가 환경 */ }
   }
 
+  // ---------- 공유 저장소 (컷 시간은 모두가 같은 값을 본다) ----------
+  var DB = 'https://zeus-boss-clock-default-rtdb.firebaseio.com';
+  var shareOk = false, seeded = false;
+
+  function keyOf(name) { return name.replace(/[.#$\[\]\/\s]/g, '_'); }
+  function bossByKey(k) {
+    for (var i = 0; i < state.bosses.length; i++) {
+      if (keyOf(state.bosses[i].n) === k) return state.bosses[i];
+    }
+    return null;
+  }
+
+  function setShareState(ok) {
+    if (shareOk === ok) return;
+    shareOk = ok;
+    shareChip.setAttribute('aria-pressed', ok ? 'true' : 'false');
+    shareLabel.textContent = ok ? '공유 중' : '연결 끊김';
+    shareChip.title = ok ? '컷 시간을 친구들과 같이 씁니다' : '공유 서버에 연결하지 못했습니다. 이 브라우저에만 기록됩니다.';
+  }
+
+  function pushCut(b) {
+    if (b.type !== 'cycle') return;
+    try {
+      fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ at: b.at, cyc: b.cyc, t: Date.now() })
+      }).then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
+    } catch (e) { setShareState(false); }
+  }
+
+  function pushAll() {
+    var out = {};
+    state.bosses.forEach(function (b) {
+      if (b.type !== 'cycle') return;
+      out[keyOf(b.n)] = { at: b.at, cyc: b.cyc, t: Date.now() };
+    });
+    try {
+      fetch(DB + '/cuts.json', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out)
+      }).then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
+    } catch (e) { setShareState(false); }
+  }
+
+  function applyRemote(path, data) {
+    if (data === null && path === '/') { if (!seeded) { seeded = true; pushAll(); } return; }
+    var changed = false;
+    function one(k, v) {
+      if (!v || typeof v.at !== 'string') return;
+      var b = bossByKey(k);
+      if (!b || b.at === v.at) return;
+      b.at = v.at;
+      if (typeof v.cyc === 'number' && v.cyc > 0) b.cyc = v.cyc;
+      changed = true;
+    }
+    if (path === '/') {
+      seeded = true;
+      for (var k in data) { if (Object.prototype.hasOwnProperty.call(data, k)) one(k, data[k]); }
+    } else {
+      one(path.replace(/^\//, ''), data);
+    }
+    if (changed) { save(); tick(); }
+  }
+
+  function connectShare() {
+    if (typeof EventSource === 'undefined') { setShareState(false); return; }
+    var es;
+    try { es = new EventSource(DB + '/cuts.json'); } catch (e) { setShareState(false); return; }
+    es.addEventListener('put', function (e) {
+      setShareState(true);
+      try { var m = JSON.parse(e.data); applyRemote(m.path, m.data); } catch (err) { /* 무시 */ }
+    });
+    es.addEventListener('patch', function (e) {
+      setShareState(true);
+      try {
+        var m = JSON.parse(e.data);
+        if (m.path === '/') { for (var k in m.data) applyRemote('/' + k, m.data[k]); }
+        else applyRemote(m.path, m.data);
+      } catch (err) { /* 무시 */ }
+    });
+    es.onopen = function () { setShareState(true); };
+    es.onerror = function () { setShareState(false); };
+  }
+
   function isoLocal(d) {
     function p(v) { return (v < 10 ? '0' : '') + v; }
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
@@ -382,6 +470,9 @@
   };
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
+  var shareChip = document.getElementById('shareChip');
+  var shareLabel = document.getElementById('shareLabel');
+  var undoBtn = document.getElementById('undoBtn');
   var cache = {}, stripCache = {}, lastOrder = '', lastStrip = '', headBoss = null;
 
   function buildRow(b) {
@@ -438,11 +529,30 @@
     return el;
   }
 
+  var undo = null, undoTimer = null;
+  function offerUndo(b, prevAt) {
+    undo = { b: b, at: prevAt };
+    undoBtn.hidden = false;
+    undoBtn.textContent = '되돌리기 · ' + b.n;
+    if (undoTimer) clearTimeout(undoTimer);
+    undoTimer = setTimeout(function () { undo = null; undoBtn.hidden = true; }, 60000);
+  }
+  undoBtn.addEventListener('click', function () {
+    if (!undo) return;
+    undo.b.at = undo.at;
+    pushCut(undo.b);
+    undo = null; undoBtn.hidden = true;
+    save(); tick();
+  });
+
   function doCut(b) {
     var now = new Date();
     var t = spawnOf(b, now);
     if (t && t > now && !confirm(b.n + ' 은(는) 아직 출현 전입니다. 지금을 컷으로 기록할까요?')) return;
+    var prevAt = b.at;
     b.at = isoLocal(new Date(now.getTime() + b.cyc * 3600000));
+    pushCut(b);
+    offerUndo(b, prevAt);
     save(); tick();
   }
 
@@ -604,7 +714,9 @@
       var c = parseFloat(cycEl.value);
       if (!(c > 0)) { errEl.textContent = '젠 주기를 시간 단위 숫자로 넣어주세요.'; return; }
       if (ms > (c + 0.5) * 3600000 && !confirm('남은 시간이 젠 주기보다 깁니다. 이대로 저장할까요?')) return;
+      var prevAt = b.at;
       b.cyc = c; b.at = isoLocal(new Date(Date.now() + ms));
+      pushCut(b); offerUndo(b, prevAt);
       save(); closeSheet(); tick();
     });
     remEl.focus(); remEl.select();
@@ -619,6 +731,7 @@
   } catch (e) { /* 구형 브라우저 */ }
 
   load(); paintTheme(); applyMode(); tick();
+  connectShare();
   setInterval(tick, 1000);
 })();
 </script>
