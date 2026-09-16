@@ -431,6 +431,7 @@
       if (!b || b.at === v.at) return;
       b.at = v.at;
       if (typeof v.cyc === 'number' && v.cyc > 0) b.cyc = v.cyc;
+      b.seenAt = Date.now();   // 다른 사람이 방금 바꾼 시각 (내 시계 기준)
       changed = true;
     }
     if (path === '/') {
@@ -600,7 +601,7 @@
 
   var undo = null, undoTimer = null;
   function offerUndo(b, prevAt) {
-    undo = { b: b, at: prevAt };
+    undo = { b: b, at: prevAt, madeAt: Date.now() };
     undoBtn.hidden = false;
     undoBtn.textContent = '되돌리기 · ' + b.n;
     if (undoTimer) clearTimeout(undoTimer);
@@ -608,8 +609,13 @@
   }
   undoBtn.addEventListener('click', function () {
     if (!undo) return;
-    undo.b.at = undo.at;
-    pushCut(undo.b);
+    var b = undo.b;
+    // 되돌리는 사이에 다른 사람이 새로 컷했다면 그 기록을 지우게 된다
+    if (b.seenAt && b.seenAt > undo.madeAt &&
+        !confirm('그 사이 다른 사람이 ' + b.n + ' 을(를) 다시 기록했습니다. 그래도 되돌릴까요?')) return;
+    b.at = undo.at;
+    b.seenAt = Date.now();
+    pushCut(b);
     undo = null; undoBtn.hidden = true;
     save(); tick();
   });
@@ -618,8 +624,14 @@
     var now = new Date();
     var t = spawnOf(b, now);
     if (t && t > now && !confirm(b.n + ' 은(는) 아직 출현 전입니다. 지금을 컷으로 기록할까요?')) return;
+    // 중복 컷 방지 — 1분 안에 이미 누가 기록했으면 한 번 더 묻는다
+    if (b.seenAt && now.getTime() - b.seenAt < 60000) {
+      var sec = Math.round((now.getTime() - b.seenAt) / 1000);
+      if (!confirm(sec + '초 전에 누군가 이미 ' + b.n + ' 컷을 기록했습니다. 덮어쓸까요?')) return;
+    }
     var prevAt = b.at;
     b.at = isoLocal(new Date(now.getTime() + b.cyc * 3600000));
+    b.seenAt = now.getTime();
     pushCut(b);
     offerUndo(b, prevAt);
     save(); tick();
