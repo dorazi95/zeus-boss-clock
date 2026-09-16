@@ -223,9 +223,6 @@
       <header class="topbar">
         <div class="brand">제우스 보스 시계 <span>오만의 신</span></div>
         <span class="clock" id="clock">--:--:--</span>
-        <button class="chip" id="onlineBtn" type="button" aria-pressed="false">
-          <span class="dot"></span><span id="onlineLabel">온라인 모드 OFF</span>
-        </button>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">밝은 모드</span></button>
       </header>
 
@@ -254,7 +251,7 @@
 
       <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
-        <b>온라인 모드 ON</b> — 컷을 누르기 전까지 "출현 중"으로 대기합니다. <b>OFF</b> — 잡는 시간이 지나면 자동으로 다음 주기로 넘어갑니다.<br>
+        보스는 젠 시각이 지나면 <b>출현 중</b>으로 계속 남아 있습니다. 잡은 뒤 <b>컷</b>을 눌러야 다음 젠을 다시 셉니다.<br>
         <b>연필</b> 버튼으로 게임 현황판의 남은 시간을 그대로 넣어 맞출 수 있습니다. 기록은 이 브라우저에만 저장됩니다.
       </p>
     </div>
@@ -288,7 +285,7 @@
   var KEY = 'zeus-boss-clock-v1';
   var STRIP_COUNT = 6;
 
-  var state = { online: true, theme: 'auto', bosses: null };
+  var state = { theme: 'auto', bosses: null };
 
   function clone(list) {
     return list.map(function (b) {
@@ -305,7 +302,6 @@
     var saved;
     try { saved = JSON.parse(raw); } catch (e) { return; }
     if (!saved) return;
-    if (typeof saved.online === 'boolean') state.online = saved.online;
     if (saved.theme === 'light' || saved.theme === 'dark' || saved.theme === 'auto') state.theme = saved.theme;
     if (!saved.bosses) return;
     state.bosses.forEach(function (b) {
@@ -319,7 +315,7 @@
   }
 
   function save() {
-    var out = { online: state.online, theme: state.theme, bosses: {} };
+    var out = { theme: state.theme, bosses: {} };
     state.bosses.forEach(function (b) {
       out.bosses[b.n] = { at: b.at, cyc: b.cyc, kill: b.kill, on: b.on };
     });
@@ -345,14 +341,7 @@
     if (!b.at) return null;
     var t = new Date(b.at);
     if (isNaN(t)) return null;
-    if (!state.online && b.cyc > 0) {
-      var kill = b.kill > 0 ? b.kill : 5, rolled = false, guard = 0;
-      while (t.getTime() + kill * 60000 <= now.getTime() && guard < 400) {
-        t = new Date(t.getTime() + kill * 60000 + b.cyc * 3600000);
-        rolled = true; guard++;
-      }
-      if (rolled) { b.at = isoLocal(t); save(); }
-    }
+    // 컷을 누르기 전까지는 계속 출현 중 상태로 둔다 (자동 진행 없음)
     return t;
   }
 
@@ -391,8 +380,6 @@
     miniName: document.getElementById('miniName'), miniTime: document.getElementById('miniTime'),
     miniSub: document.getElementById('miniSub'), miniCut: document.getElementById('miniCut')
   };
-  var onlineBtn = document.getElementById('onlineBtn');
-  var onlineLabel = document.getElementById('onlineLabel');
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
   var cache = {}, stripCache = {}, lastOrder = '', lastStrip = '', headBoss = null;
@@ -565,14 +552,6 @@
   });
   window.addEventListener('resize', applyMode);
 
-  onlineBtn.addEventListener('click', function () {
-    state.online = !state.online; paintOnline(); save(); tick();
-  });
-  function paintOnline() {
-    onlineBtn.setAttribute('aria-pressed', state.online ? 'true' : 'false');
-    onlineLabel.textContent = state.online ? '온라인 모드 ON' : '온라인 모드 OFF';
-  }
-
   function systemDark() {
     try { return window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { return false; }
   }
@@ -602,10 +581,7 @@
         '<div class="field"><label for="f-rem">남은 시간</label>' +
           '<input id="f-rem" autocomplete="off">' +
           '<span class="hint">현황판 값 그대로 — 6:51, 6시간 51분, 51분 모두 인식</span></div>' +
-        '<div class="two">' +
-          '<div class="field"><label for="f-cyc">젠 주기 (시간)</label><input id="f-cyc"></div>' +
-          '<div class="field"><label for="f-kill">잡는 시간 (분)</label><input id="f-kill"></div>' +
-        '</div>' +
+        '<div class="field"><label for="f-cyc">젠 주기 (시간)</label><input id="f-cyc"></div>' +
         '<p class="err" id="f-err"></p>' +
         '<div class="actions"><button class="btn" id="f-cancel" type="button">취소</button>' +
         '<button class="btn primary" id="f-ok" type="button">저장</button></div>' +
@@ -614,22 +590,21 @@
     scrim.querySelector('h2').textContent = b.n;
     scrim.querySelector('.sub').textContent = 'Lv.' + b.lv + ' · ' + b.loc;
     var remEl = scrim.querySelector('#f-rem'), cycEl = scrim.querySelector('#f-cyc');
-    var killEl = scrim.querySelector('#f-kill'), errEl = scrim.querySelector('#f-err');
+    var errEl = scrim.querySelector('#f-err');
     var s = Math.floor(rest / 1000);
     function p(v) { return (v < 10 ? '0' : '') + v; }
     remEl.value = Math.floor(s / 3600) + ':' + p(Math.floor((s % 3600) / 60)) + ':' + p(s % 60);
-    cycEl.value = String(b.cyc); killEl.value = String(b.kill);
+    cycEl.value = String(b.cyc);
     remEl.addEventListener('input', function () { errEl.textContent = ''; });
     scrim.querySelector('#f-cancel').addEventListener('click', closeSheet);
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
     scrim.querySelector('#f-ok').addEventListener('click', function () {
       var ms = parseRemain(remEl.value);
       if (ms === null) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 6:51 또는 6시간 51분'; return; }
-      var c = parseFloat(cycEl.value), k = parseFloat(killEl.value);
+      var c = parseFloat(cycEl.value);
       if (!(c > 0)) { errEl.textContent = '젠 주기를 시간 단위 숫자로 넣어주세요.'; return; }
-      if (!(k >= 0)) k = 0;
       if (ms > (c + 0.5) * 3600000 && !confirm('남은 시간이 젠 주기보다 깁니다. 이대로 저장할까요?')) return;
-      b.cyc = c; b.kill = k; b.at = isoLocal(new Date(Date.now() + ms));
+      b.cyc = c; b.at = isoLocal(new Date(Date.now() + ms));
       save(); closeSheet(); tick();
     });
     remEl.focus(); remEl.select();
@@ -643,7 +618,7 @@
     });
   } catch (e) { /* 구형 브라우저 */ }
 
-  load(); paintTheme(); paintOnline(); applyMode(); tick();
+  load(); paintTheme(); applyMode(); tick();
   setInterval(tick, 1000);
 })();
 </script>
