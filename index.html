@@ -359,11 +359,23 @@
   // ---------- 5분 전 음성 알림 ----------
   var warned = {}, primed = false, audioCtx = null;
 
-  function beep() {
+  // 브라우저는 사용자가 페이지를 한 번 건드리기 전까지 소리를 막는다.
+  // 새로고침될 때마다 다시 막히므로, 아무 클릭에서든 잠금을 풀어 둔다.
+  function ensureAudio() {
     try {
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* 소리 불가 환경 */ }
+  }
+  document.addEventListener('pointerdown', ensureAudio);
+  document.addEventListener('keydown', ensureAudio);
+
+  function beep() {
+    try {
+      ensureAudio();
+      if (!audioCtx) return;
       var t0 = audioCtx.currentTime;
       [0, 0.18].forEach(function (off) {
         var o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -728,6 +740,7 @@
       if (document.title !== '제우스 보스 시계') document.title = '제우스 보스 시계';
     }
 
+    paintSound();
     var clockTxt = now.toTimeString().slice(0, 8);
     els.clock.textContent = clockTxt;
     els.stripClock.textContent = clockTxt;
@@ -767,10 +780,12 @@
   }
   function paintSound() {
     soundBtn.setAttribute('aria-pressed', state.sound ? 'true' : 'false');
-    soundLabel.textContent = state.sound ? '소리 켬' : '소리 끔';
-    soundBtn.title = state.sound
-      ? '출현 5분 전에 소리와 음성으로 알립니다'
-      : '소리 알림이 꺼져 있습니다';
+    var blocked = state.sound && (!audioCtx || audioCtx.state === 'suspended');
+    var label = !state.sound ? '소리 끔' : (blocked ? '소리 켬 · 화면 클릭 필요' : '소리 켬');
+    if (soundLabel.textContent !== label) soundLabel.textContent = label;
+    soundBtn.title = !state.sound ? '소리 알림이 꺼져 있습니다'
+      : (blocked ? '브라우저가 소리를 막고 있습니다. 페이지를 한 번 클릭하면 풀립니다.'
+                 : '출현 5분 전에 소리와 음성으로 알립니다');
   }
   soundBtn.addEventListener('click', function () {
     state.sound = !state.sound;
