@@ -332,10 +332,11 @@
            'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
+  // 주간 보스는 젠되는 순간 바로 잡히는 것으로 보고 다음 주로 넘긴다 — 컷을 칠 일이 없다
   function nextWeekly(b, now) {
     var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), b.hour, 0, 0, 0);
     d.setDate(d.getDate() + ((b.wd - now.getDay() + 7) % 7));
-    if (d <= now) d.setDate(d.getDate() + 7);
+    while (d <= now) d.setDate(d.getDate() + 7);
     return d;
   }
 
@@ -424,8 +425,9 @@
       edit.addEventListener('click', function () { openSheet(b); });
       acts.appendChild(cut); acts.appendChild(edit);
     } else {
+      // 주간 보스는 컷을 치지 않는다. 젠 시각이 지나는 순간 다음 주로 자동으로 넘어간다.
       acts.className = 'when';
-      acts.textContent = WD[b.wd] + '요일 ' + b.hour + '시';
+      acts.textContent = '자동 · ' + WD[b.wd] + ' ' + b.hour + '시';
     }
     el._rem = el.querySelector('.rem');
     return el;
@@ -513,7 +515,9 @@
       var warn = !head.up && left <= 5 * 60000;
       var timeTxt = head.up ? '출현 중' : fmtLong(left);
       var noteTxt = head.up ? ('출현한 지 ' + fmtLong(now - head.t) + ' 지났습니다')
-        : (head.b.type === 'weekly' ? (WD[head.b.wd] + '요일 ' + head.b.hour + '시') : ('젠 주기 ' + head.b.cyc + '시간'));
+        : (head.b.type === 'weekly'
+            ? ('매주 ' + WD[head.b.wd] + '요일 ' + head.b.hour + '시 · 컷 없이 자동')
+            : ('젠 주기 ' + head.b.cyc + '시간'));
       els.nextName.textContent = head.b.n;
       els.nextLoc.textContent = 'Lv.' + head.b.lv + ' · ' + head.b.loc;
       els.nextTime.textContent = timeTxt;
