@@ -646,12 +646,17 @@
       miniEl.classList.toggle('up', head.up);
       miniEl.classList.toggle('warn', warn);
       els.miniCut.hidden = !(head.b.type === 'cycle' && (head.up || warn));
+
+      // 브라우저 탭에도 다음 보스를 띄운다 (탭이 좁을 때를 생각해 시간을 앞에)
+      var title = timeTxt + ' · ' + head.b.n;
+      if (document.title !== title) document.title = title;
     } else {
       els.nextName.textContent = '표시할 보스 없음';
       els.nextTime.textContent = '--:--';
       els.miniName.textContent = '표시할 보스 없음';
       els.miniTime.textContent = '--:--';
       els.miniCut.hidden = true;
+      if (document.title !== '제우스 보스 시계') document.title = '제우스 보스 시계';
     }
 
     var clockTxt = now.toTimeString().slice(0, 8);
