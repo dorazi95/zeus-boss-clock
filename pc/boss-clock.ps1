@@ -44,7 +44,7 @@ $script:Spawn = @{}   # 보스명 -> [datetime] (서버에서 받은 젠 시각)
 
 # ---------- 설정 (위치, 테마) ----------
 function Load-Cfg {
-  $c = [pscustomobject]@{ X = $null; Y = $null; Theme = 'dark'; Spawn = @{} }
+  $c = [pscustomobject]@{ X = $null; Y = $null; Theme = 'dark'; Sound = $true; Spawn = @{} }
   if (Test-Path $CfgPath) {
     try {
       $raw = Get-Content $CfgPath -Raw -Encoding UTF8
@@ -53,6 +53,7 @@ function Load-Cfg {
         if ($null -ne $j.X) { $c.X = [int]$j.X }
         if ($null -ne $j.Y) { $c.Y = [int]$j.Y }
         if ($j.Theme -eq 'light' -or $j.Theme -eq 'dark') { $c.Theme = $j.Theme }
+        if ($null -ne $j.Sound) { $c.Sound = [bool]$j.Sound }
         if ($j.Spawn) { foreach ($p in $j.Spawn.PSObject.Properties) { $c.Spawn[$p.Name] = [string]$p.Value } }
       }
     } catch { }
@@ -63,7 +64,7 @@ function Save-Cfg {
   try {
     $keep = @{}
     foreach ($k in $script:Spawn.Keys) { $keep[$k] = $script:Spawn[$k].ToString('s') }
-    $out = [pscustomobject]@{ X = $script:Cfg.X; Y = $script:Cfg.Y; Theme = $script:Cfg.Theme; Spawn = $keep }
+    $out = [pscustomobject]@{ X = $script:Cfg.X; Y = $script:Cfg.Y; Theme = $script:Cfg.Theme; Sound = $script:Cfg.Sound; Spawn = $keep }
     $tmp = $CfgPath + '.tmp'
     [System.IO.File]::WriteAllText($tmp, ($out | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($true)))
     Move-Item -LiteralPath $tmp -Destination $CfgPath -Force
@@ -129,6 +130,40 @@ function Fmt-Short([timespan]$ts) {
   if ($ts.TotalHours -ge 1) { return ('{0}:{1:00}' -f [int][Math]::Floor($ts.TotalHours), $ts.Minutes) }
   return ('{0}분' -f $ts.Minutes)
 }
+# ---------- 5분 전 음성 알림 ----------
+# 브라우저와 달리 위젯은 클릭 없이도 소리를 낼 수 있다.
+$script:Warned = @{}
+$script:Primed = $false
+$script:Synth  = $null
+
+function Get-Synth {
+  if ($null -ne $script:Synth) { return $script:Synth }
+  try {
+    Add-Type -AssemblyName System.Speech -ErrorAction Stop
+    $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+    $ko = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'ko*' } | Select-Object -First 1
+    if ($ko) { $s.SelectVoice($ko.VoiceInfo.Name) }
+    $script:Synth = $s
+  } catch { $script:Synth = $null }
+  return $script:Synth
+}
+
+function Announce([string]$name) {
+  try { [System.Media.SystemSounds]::Exclamation.Play() } catch { }
+  $s = Get-Synth
+  if ($null -ne $s) {
+    try { [void]$s.SpeakAsync("$name 5분 전입니다") } catch { }
+  }
+}
+
+function Check-Alert($item, [timespan]$left) {
+  $k = [string]$item.B.Name + '|' + $item.T.Ticks
+  if ($left.TotalMilliseconds -gt 300000 -or $left.TotalMilliseconds -le 0) { return }
+  if ($script:Warned.ContainsKey($k)) { return }
+  $script:Warned[$k] = $true
+  if ($script:Primed -and $script:Cfg.Sound) { Announce ([string]$item.B.Name) }
+}
+
 function Short-Name([string]$n) {
   $s = $n -replace '^봉인된 ', ''
   if ($s.Length -gt 9) { $s = $s.Substring(0, 8) + [string][char]0x2026 }
@@ -310,6 +345,15 @@ foreach ($c in @($f, $slotL, $slotLT, $slotR, $slotRT, $lblName, $lblTime)) {
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miTheme = $menu.Items.Add('다크 / 일반 모드 전환')
 $miTheme.Add_Click({ Toggle-Theme })
+$script:MiSound = $menu.Items.Add('5분 전 소리 알림')
+$script:MiSound.CheckOnClick = $false
+$script:MiSound.Checked = [bool]$script:Cfg.Sound
+$script:MiSound.Add_Click({
+  $script:Cfg.Sound = -not [bool]$script:Cfg.Sound
+  $script:MiSound.Checked = [bool]$script:Cfg.Sound
+  Save-Cfg
+  if ($script:Cfg.Sound) { Announce '소리 알림' }
+})
 $miWeb = $menu.Items.Add('웹에서 컷 입력하기')
 $miWeb.Add_Click({ Start-Process $WebUrl })
 $miPos = $menu.Items.Add('위치 초기화')
@@ -364,6 +408,8 @@ $timer.Add_Tick({
   $list = @()
   if ($ups.Count  -gt 0) { $list += @($ups  | Sort-Object T) }
   if ($pend.Count -gt 0) { $list += @($pend | Sort-Object T) }
+  foreach ($it in $pend) { Check-Alert $it ($it.T - $now) }
+  $script:Primed = $true
 
   if (@($list).Count -gt 0) {
     $m = @($list)[0]
