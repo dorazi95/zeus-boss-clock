@@ -225,7 +225,7 @@
         <span class="clock" id="clock">--:--:--</span>
         <button class="chip" id="undoBtn" type="button" hidden>되돌리기</button>
         <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
-        <button class="chip" id="themeBtn" type="button"><span id="themeLabel">밝은 모드</span></button>
+        <button class="chip" id="themeBtn" type="button"><span id="themeLabel">다크 모드</span></button>
       </header>
 
       <div class="main">
@@ -670,8 +670,8 @@
     if (state.theme === 'auto') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', state.theme);
     var dark = state.theme === 'dark' || (state.theme === 'auto' && systemDark());
-    themeLabel.textContent = dark ? '밝은 모드' : '어두운 모드';
-    themeBtn.setAttribute('aria-label', dark ? '밝은 모드로 전환' : '어두운 모드로 전환');
+    themeLabel.textContent = dark ? '일반 모드' : '다크 모드';
+    themeBtn.setAttribute('aria-label', dark ? '일반 모드로 전환' : '다크 모드로 전환');
   }
   themeBtn.addEventListener('click', function () {
     var dark = state.theme === 'dark' || (state.theme === 'auto' && systemDark());
