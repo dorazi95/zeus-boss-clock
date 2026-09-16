@@ -1,4 +1,8 @@
 ﻿# 제우스 보스 시계 - 좌측 상단 상주 위젯
+# 이미 떠 있으면 중복 실행하지 않는다 (웹의 [PC 위젯 열기] 버튼이 여러 번 눌려도 창은 하나)
+$script:__created = $false
+$script:__mutex = New-Object System.Threading.Mutex($true, 'Local\ZeusBossClockSingleInstance', [ref]$script:__created)
+if (-not $script:__created) { exit }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
