@@ -365,16 +365,20 @@
   }
 
   // ---------- 5분 전 음성 알림 ----------
-  var warned = {}, primed = false, audioCtx = null;
+  var warned = {}, primed = false, audioCtx = null, gestured = false;
 
   // 브라우저는 사용자가 페이지를 한 번 건드리기 전까지 소리를 막는다.
   // 새로고침될 때마다 다시 막히므로, 아무 클릭에서든 잠금을 풀어 둔다.
   function ensureAudio() {
+    gestured = true;
     try {
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       if (!audioCtx) audioCtx = new AC();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (audioCtx.state === 'suspended') {
+        var p = audioCtx.resume();
+        if (p && p.then) p.then(function () { paintSound(); });
+      }
     } catch (e) { /* 소리 불가 환경 */ }
   }
   document.addEventListener('pointerdown', ensureAudio);
@@ -792,7 +796,8 @@
   }
   function paintSound() {
     soundBtn.setAttribute('aria-pressed', state.sound ? 'true' : 'false');
-    var blocked = state.sound && (!audioCtx || audioCtx.state === 'suspended');
+    // 한 번이라도 페이지를 건드렸으면 소리가 나가므로 안내를 지운다
+    var blocked = state.sound && !gestured && (!audioCtx || audioCtx.state === 'suspended');
     var label = !state.sound ? '소리 끔' : (blocked ? '소리 켬 · 화면 클릭 필요' : '소리 켬');
     if (soundLabel.textContent !== label) soundLabel.textContent = label;
     soundBtn.title = !state.sound ? '소리 알림이 꺼져 있습니다'
