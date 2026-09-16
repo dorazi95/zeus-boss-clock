@@ -241,24 +241,13 @@
         <div class="board">
           <section>
             <div class="sect-head">
-              <h2>필드 · 젠 보스</h2>
-              <span class="hint">체크한 보스만 작은 창·목록 창에 나옵니다</span>
+              <h2>보스 목록</h2>
+              <span class="hint">가까운 순 · 체크한 보스만 작은 창·목록 창에 나옵니다</span>
             </div>
             <div class="thead">
-              <div>표시</div><div>Lv</div><div>보스</div><div>지역</div><div class="r">남은 시간</div><div class="r">컷</div>
+              <div>표시</div><div>Lv</div><div>보스</div><div>지역</div><div class="r">남은 시간</div><div class="r">컷 · 출현</div>
             </div>
-            <div class="rows" id="cycleRows"></div>
-          </section>
-
-          <section>
-            <div class="sect-head">
-              <h2>주간 보스</h2>
-              <span class="hint">요일 고정 · 입력할 필요 없이 자동 계산</span>
-            </div>
-            <div class="thead">
-              <div>표시</div><div>Lv</div><div>보스</div><div>지역</div><div class="r">남은 시간</div><div class="r">출현</div>
-            </div>
-            <div class="rows" id="weeklyRows"></div>
+            <div class="rows" id="allRows"></div>
           </section>
         </div>
       </div>
@@ -390,8 +379,7 @@
   }
 
   var app = document.getElementById('app');
-  var cycleRows = document.getElementById('cycleRows');
-  var weeklyRows = document.getElementById('weeklyRows');
+  var allRows = document.getElementById('allRows');
   var stripRows = document.getElementById('stripRows');
   var heroEl = document.getElementById('hero');
   var miniEl = document.getElementById('mini');
@@ -475,25 +463,21 @@
 
   function tick() {
     var now = new Date();
-    var cyc = [], wk = [];
+    var all = [];
     state.bosses.forEach(function (b) {
       var t = spawnOf(b, now);
       if (!t) return;
-      (b.type === 'weekly' ? wk : cyc).push({ b: b, t: t, up: t <= now });
+      all.push({ b: b, t: t, up: t <= now });
     });
-    cyc.sort(byList);
-    wk.sort(function (x, y) { return (x.b.on !== y.b.on) ? (x.b.on ? -1 : 1) : x.t - y.t; });
+    all.sort(byList);
 
-    var order = cyc.concat(wk).map(function (i) { return i.b.n; }).join('|');
+    var order = all.map(function (i) { return i.b.n; }).join('|');
     if (order !== lastOrder) {
       lastOrder = order;
-      cycleRows.textContent = '';
-      cyc.forEach(function (it) { cycleRows.appendChild(cache[it.b.n] || (cache[it.b.n] = buildRow(it.b))); });
-      weeklyRows.textContent = '';
-      wk.forEach(function (it) { weeklyRows.appendChild(cache[it.b.n] || (cache[it.b.n] = buildRow(it.b))); });
+      allRows.textContent = '';
+      all.forEach(function (it) { allRows.appendChild(cache[it.b.n] || (cache[it.b.n] = buildRow(it.b))); });
     }
 
-    var all = cyc.concat(wk);
     all.forEach(function (it) {
       var row = cache[it.b.n], left = it.t - now;
       var warn = !it.up && left <= 5 * 60000;
