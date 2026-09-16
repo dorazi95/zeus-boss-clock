@@ -624,10 +624,11 @@
     var now = new Date();
     var t = spawnOf(b, now);
     if (t && t > now && !confirm(b.n + ' 은(는) 아직 출현 전입니다. 지금을 컷으로 기록할까요?')) return;
-    // 중복 컷 방지 — 1분 안에 이미 누가 기록했으면 한 번 더 묻는다
-    if (b.seenAt && now.getTime() - b.seenAt < 60000) {
+    // 중복 컷 방지 — 3분 안에 이미 누가 기록했으면 한 번 더 묻는다
+    if (b.seenAt && now.getTime() - b.seenAt < 180000) {
       var sec = Math.round((now.getTime() - b.seenAt) / 1000);
-      if (!confirm(sec + '초 전에 누군가 이미 ' + b.n + ' 컷을 기록했습니다. 덮어쓸까요?')) return;
+      var ago = sec < 60 ? (sec + '초 전') : (Math.floor(sec / 60) + '분 ' + (sec % 60) + '초 전');
+      if (!confirm(ago + '에 누군가 이미 ' + b.n + ' 컷을 기록했습니다. 덮어쓸까요?')) return;
     }
     var prevAt = b.at;
     b.at = isoLocal(new Date(now.getTime() + b.cyc * 3600000));
