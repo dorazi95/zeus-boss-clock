@@ -84,11 +84,6 @@
     padding: 9px 10px; border-bottom: 1px solid var(--line-soft);
     border-left: 3px solid transparent;
   }
-  @media (max-width: 330px) {
-    .srow { grid-template-columns: minmax(0, 1fr) auto; }
-    .srow .lv { display: none; }
-    .strip-head .t { font-size: 10px; letter-spacing: .08em; }
-  }
   .srow.up { border-left-color: var(--accent-solid); background: var(--accent-bg); }
   .srow.warn { border-left-color: var(--danger-solid); background: var(--danger-bg); }
   .srow .lv { font-family: var(--font-mono); font-size: 11px; color: var(--dim); }
@@ -183,12 +178,7 @@
   .edit { background: transparent; border: 1px solid var(--line); color: var(--dim); border-radius: 7px; width: 30px; height: 30px; font-size: 13px; cursor: pointer; display: grid; place-items: center; padding: 0; }
   .edit:hover { color: var(--text); border-color: var(--dim); }
 
-  .pcbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--line); }
-  .pcbar a.chip { text-decoration: none; }
-  .pchint { font-size: 12px; color: var(--dim); flex: 1 1 260px; line-height: 1.6; }
-  .pchint b { color: var(--muted); font-weight: 500; }
-
-  .foot { color: var(--dim); font-size: 12.5px; line-height: 1.8; padding-top: 14px; }
+  .foot { color: var(--dim); font-size: 12.5px; line-height: 1.8; padding-top: 18px; border-top: 1px solid var(--line); }
   .foot b { color: var(--muted); font-weight: 500; }
 
   @media (max-width: 620px) {
@@ -284,11 +274,6 @@
           </section>
         </div>
       </div>
-
-      <div class="pcbar" id="pcbar" hidden>
-    <button class="chip" id="pcOpen" type="button">PC 위젯 열기</button>
-    <span class="pchint" id="pcHint">화면 위에 항상 떠 있는 작은 시계입니다. 컷은 여기 웹에서 누르고, 위젯은 같은 시간을 보여줍니다.</span>
-  </div>
 
   <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
@@ -789,7 +774,7 @@
     if (forced) return forced;
     var w = window.innerWidth, h = window.innerHeight;
     if (h < 240 || (w < 320 && h < 420)) return 'compact';
-    if (w < 620) return 'list';
+    if (w < 470) return 'list';
     return 'full';
   }
   function applyMode() {
@@ -923,36 +908,6 @@
       pipBtns[pi].title = '항상 위에 뜨는 작은 창으로 띄웁니다';
       pipBtns[pi].addEventListener('click', openPip);
     }
-  }
-
-  // PC 위젯 열기 — 브라우저는 프로그램을 직접 실행할 수 없어서 bossclock:// 링크로 연다.
-  // 그 링크가 등록돼 있지 않으면(=아직 설치 전) 설치 파일을 대신 받아준다.
-  var pcbar = document.getElementById('pcbar');
-  if (/Windows NT/.test(navigator.userAgent)) {
-    pcbar.hidden = false;
-    var pcHint = document.getElementById('pcHint');
-    document.getElementById('pcOpen').addEventListener('click', function () {
-      var left = false;
-      function onLeave() { left = true; }
-      window.addEventListener('blur', onLeave);
-      document.addEventListener('visibilitychange', onLeave);
-
-      var frame = document.createElement('iframe');
-      frame.style.display = 'none';
-      frame.src = 'bossclock://open';
-      document.body.appendChild(frame);
-
-      setTimeout(function () {
-        window.removeEventListener('blur', onLeave);
-        document.removeEventListener('visibilitychange', onLeave);
-        frame.remove();
-        if (left || document.hidden) return;   // 위젯이 떴다
-        // 아직 설치 전일 때만 안내 — 한 번 설치하면 이 버튼만으로 열린다
-        pcHint.innerHTML = '위젯이 안 열렸다면 이 PC에 아직 설치가 안 된 것입니다. ' +
-          '<a href="boss-clock-install.cmd" download>설치 파일 받기</a> → 받은 파일 실행 ' +
-          '(윈도우가 경고하면 추가 정보 → 실행). 그 뒤로는 이 버튼만 누르면 켜지고, 위젯은 켤 때마다 알아서 최신이 됩니다.';
-      }, 1600);
-    });
   }
 
   load(); paintTheme(); paintSound(); applyMode(); tick();
