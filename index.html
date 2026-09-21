@@ -239,6 +239,7 @@
     <div class="strip-head">
       <span class="t">다음 보스 6</span>
       <span class="clock" id="stripClock"></span>
+      <button class="chip small pip-btn" type="button" hidden>작은 창</button>
       <button class="chip small" id="stripFull" type="button">전체</button>
     </div>
     <div class="strip-rows" id="stripRows"></div>
@@ -254,6 +255,7 @@
           <span class="dot"></span><span id="soundLabel">소리 끔</span>
         </button>
         <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
+        <button class="chip pip-btn" type="button" hidden>작은 창</button>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">다크 모드</span></button>
       </header>
 
@@ -807,6 +809,10 @@
     var root = document.documentElement;
     if (state.theme === 'auto') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', state.theme);
+    if (pipWin) {
+      if (state.theme === 'auto') pipWin.document.documentElement.removeAttribute('data-theme');
+      else pipWin.document.documentElement.setAttribute('data-theme', state.theme);
+    }
     var dark = state.theme === 'dark' || (state.theme === 'auto' && systemDark());
     themeLabel.textContent = dark ? '일반 모드' : '다크 모드';
     themeBtn.setAttribute('aria-label', dark ? '일반 모드로 전환' : '다크 모드로 전환');
@@ -885,6 +891,39 @@
       if (state.theme === 'auto') paintTheme();
     });
   } catch (e) { /* 구형 브라우저 */ }
+
+  // ---------- 작은 창 (문서 PiP) ----------
+  // 크롬 창은 폭 500px 아래로 줄일 수 없다. PiP 창은 그 제한이 없고 항상 위에 뜬다.
+  var pipWin = null;
+  function openPip() {
+    if (!('documentPictureInPicture' in window)) return;
+    if (pipWin) { try { pipWin.focus(); } catch (e) { /* 무시 */ } return; }
+    window.documentPictureInPicture.requestWindow({ width: 300, height: 140 }).then(function (w) {
+      pipWin = w;
+      document.querySelectorAll('style, link[rel="stylesheet"]').forEach(function (n) {
+        w.document.head.appendChild(n.cloneNode(true));
+      });
+      var t = document.documentElement.getAttribute('data-theme');
+      if (t) w.document.documentElement.setAttribute('data-theme', t);
+      w.document.body.style.background = 'var(--bg)';
+      w.document.body.style.margin = '0';
+      w.document.body.style.height = '100%';
+      w.document.documentElement.style.height = '100%';
+      w.document.body.appendChild(miniEl);          // 간단 화면을 통째로 옮긴다
+      w.addEventListener('pagehide', function () {  // 닫으면 원래 자리로
+        app.insertBefore(miniEl, app.firstChild);
+        pipWin = null;
+      });
+    }).catch(function () { pipWin = null; });
+  }
+  var pipBtns = document.querySelectorAll('.pip-btn');
+  if ('documentPictureInPicture' in window) {
+    for (var pi = 0; pi < pipBtns.length; pi++) {
+      pipBtns[pi].hidden = false;
+      pipBtns[pi].title = '항상 위에 뜨는 작은 창으로 띄웁니다';
+      pipBtns[pi].addEventListener('click', openPip);
+    }
+  }
 
   // PC 위젯 열기 — 브라우저는 프로그램을 직접 실행할 수 없어서 bossclock:// 링크로 연다.
   // 그 링크가 등록돼 있지 않으면(=아직 설치 전) 설치 파일을 대신 받아준다.
