@@ -1,3 +1,4 @@
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>제우스 보스 시계</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap">
 <style>
@@ -62,6 +63,10 @@
   }
   .mini.up .tm, .mini.up .nm { color: var(--accent); }
   .mini.warn .tm, .mini.warn .nm { color: var(--danger); }
+  .mini .tmrow { display: flex; align-items: center; gap: 10px; }
+  .mini .tmrow .tm { flex: 1 1 auto; min-width: 0; }
+  .mini .tmrow .cut { flex: 0 0 auto; background: var(--accent-solid); color: var(--on-accent); border-color: var(--accent-solid); padding: 8px 14px; }
+  .mini.warn .tmrow .cut { background: var(--danger-solid); color: #fff; border-color: var(--danger-solid); }
   .mini .row2 { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
   .mini .sub { font-size: 11.5px; color: var(--dim); }
 
@@ -74,10 +79,15 @@
   .strip-head .t { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 500; margin-right: auto; }
   .strip-rows { display: grid; align-content: start; }
   .srow {
-    display: grid; grid-template-columns: 30px minmax(0, 1fr) auto;
+    display: grid; grid-template-columns: 26px minmax(0, 1fr) auto;
     align-items: center; gap: 8px;
-    padding: 9px 12px; border-bottom: 1px solid var(--line-soft);
+    padding: 9px 10px; border-bottom: 1px solid var(--line-soft);
     border-left: 3px solid transparent;
+  }
+  @media (max-width: 330px) {
+    .srow { grid-template-columns: minmax(0, 1fr) auto; }
+    .srow .lv { display: none; }
+    .strip-head .t { font-size: 10px; letter-spacing: .08em; }
   }
   .srow.up { border-left-color: var(--accent-solid); background: var(--accent-bg); }
   .srow.warn { border-left-color: var(--danger-solid); background: var(--danger-bg); }
@@ -123,8 +133,11 @@
   .hero.up .time, .hero.up .name { color: var(--accent); }
   .hero.warn .time, .hero.warn .name { color: var(--danger); }
   .hero .note { font-size: 12px; color: var(--dim); margin-top: 6px; }
+  /* 컷 버튼은 큰 시계 오른쪽 빈 자리에 둔다 — 세로로 길어지지 않게 */
+  .hero .timerow { display: flex; align-items: center; gap: 10px; }
+  .hero .timerow .time { flex: 1 1 auto; min-width: 0; }
   .hero-cut {
-    margin-top: 12px; width: 100%; padding: 11px 0; font-size: 14px;
+    flex: 0 0 auto; padding: 10px 16px; font-size: 14px;
     background: var(--accent-solid); color: var(--on-accent); border-color: var(--accent-solid);
   }
   .hero.warn .hero-cut { background: var(--danger-solid); color: #fff; border-color: var(--danger-solid); }
@@ -212,10 +225,12 @@
   <div class="mini" id="mini">
     <div class="lbl">다음 보스</div>
     <div class="nm" id="miniName">—</div>
-    <div class="tm" id="miniTime">--:--</div>
+    <div class="tmrow">
+      <div class="tm" id="miniTime">--:--</div>
+      <button class="cut" id="miniCut" type="button" hidden>컷</button>
+    </div>
     <div class="row2">
       <span class="sub" id="miniSub"></span>
-      <button class="cut" id="miniCut" type="button" hidden>컷</button>
     </div>
   </div>
 
@@ -247,9 +262,11 @@
           <div class="eyebrow">다음 보스</div>
           <div class="name" id="nextName">—</div>
           <div class="loc" id="nextLoc"></div>
-          <div class="time" id="nextTime">--:--</div>
+          <div class="timerow">
+            <div class="time" id="nextTime">--:--</div>
+            <button class="cut hero-cut" id="heroCut" type="button" hidden>컷</button>
+          </div>
           <div class="note" id="nextNote"></div>
-          <button class="cut hero-cut" id="heroCut" type="button" hidden>컷</button>
         </aside>
 
         <div class="board">
@@ -770,7 +787,7 @@
     if (forced) return forced;
     var w = window.innerWidth, h = window.innerHeight;
     if (h < 240 || (w < 320 && h < 420)) return 'compact';
-    if (w < 470) return 'list';
+    if (w < 620) return 'list';
     return 'full';
   }
   function applyMode() {
