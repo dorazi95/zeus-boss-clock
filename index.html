@@ -76,7 +76,22 @@
     display: flex; align-items: center; gap: 8px;
     padding: 8px 12px; border-bottom: 1px solid var(--line);
   }
+  .strip-head { border-bottom: 0; padding: 0 0 2px; }
   .strip-head .t { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 500; margin-right: auto; }
+  /* 좁은 창: 맨 위에 다음 보스 하나를 크게 */
+  .striptop { padding: 12px 12px 13px; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+  .striptop .nm { font-size: 16px; font-weight: 700; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .striptop .tmrow { display: flex; align-items: center; gap: 10px; }
+  .striptop .tm {
+    flex: 1 1 auto; min-width: 0;
+    font-family: var(--font-mono); font-weight: 700; font-size: 34px; line-height: 1.1;
+    letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  }
+  .striptop .cut { flex: 0 0 auto; background: var(--accent-solid); color: var(--on-accent); border-color: var(--accent-solid); padding: 8px 14px; }
+  .striptop .sub { font-size: 11.5px; color: var(--dim); }
+  .striptop.up .tm, .striptop.up .nm { color: var(--accent); }
+  .striptop.warn .tm, .striptop.warn .nm { color: var(--danger); }
+  .striptop.warn .cut { background: var(--danger-solid); color: #fff; border-color: var(--danger-solid); }
   .strip-rows { display: grid; align-content: start; }
   .srow {
     display: grid; grid-template-columns: 26px minmax(0, 1fr) auto;
@@ -226,11 +241,18 @@
 
   <!-- 목록 모드: 가까운 6종 -->
   <div class="strip" id="strip">
-    <div class="strip-head">
-      <span class="t">다음 보스 6</span>
-      <span class="clock" id="stripClock"></span>
-      <button class="chip small pip-btn" type="button" hidden>작은 창</button>
-      <button class="chip small" id="stripFull" type="button">전체</button>
+    <div class="striptop">
+      <div class="strip-head">
+        <span class="t">다음 보스</span>
+        <button class="chip small pip-btn" type="button" hidden>작은 창</button>
+        <span class="clock" id="stripClock"></span>
+      </div>
+      <div class="nm" id="stripName">—</div>
+      <div class="tmrow">
+        <div class="tm" id="stripTime">--:--</div>
+        <button class="cut" id="stripCut" type="button" hidden>컷</button>
+      </div>
+      <div class="sub" id="stripSub"></div>
     </div>
     <div class="strip-rows" id="stripRows"></div>
   </div>
@@ -578,6 +600,7 @@
   var app = document.getElementById('app');
   var allRows = document.getElementById('allRows');
   var stripRows = document.getElementById('stripRows');
+  var stripTop = document.querySelector('.striptop');
   var heroEl = document.getElementById('hero');
   var miniEl = document.getElementById('mini');
   var els = {
@@ -586,7 +609,9 @@
     clock: document.getElementById('clock'), stripClock: document.getElementById('stripClock'),
     miniName: document.getElementById('miniName'), miniTime: document.getElementById('miniTime'),
     miniSub: document.getElementById('miniSub'), miniCut: document.getElementById('miniCut'),
-    heroCut: document.getElementById('heroCut')
+    heroCut: document.getElementById('heroCut'),
+    stripName: document.getElementById('stripName'), stripTime: document.getElementById('stripTime'),
+    stripSub: document.getElementById('stripSub'), stripCut: document.getElementById('stripCut')
   };
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
@@ -701,7 +726,7 @@
 
     // 체크된 보스만 — 다음 보스 / 목록
     var shown = all.filter(function (it) { return it.b.on; }).sort(byTime);
-    var top = shown.slice(0, STRIP_COUNT);
+    var top = shown.slice(1, STRIP_COUNT);   // 첫 번째는 위에 크게 뜨므로 목록에서는 뺀다
     var sig = top.map(function (it) { return it.b.n; }).join('|');
     if (sig !== lastStrip) {
       lastStrip = sig;
@@ -745,6 +770,12 @@
       miniEl.classList.toggle('warn', warn);
       els.miniCut.hidden = !(head.b.type === 'cycle' && (head.up || warn));
       els.heroCut.hidden = els.miniCut.hidden;
+      els.stripCut.hidden = els.miniCut.hidden;
+      els.stripName.textContent = head.b.n;
+      els.stripTime.textContent = timeTxt;
+      els.stripSub.textContent = 'Lv.' + head.b.lv + ' · ' + head.b.loc;
+      stripTop.classList.toggle('up', head.up);
+      stripTop.classList.toggle('warn', warn);
 
       // 브라우저 탭에도 다음 보스를 띄운다 (탭이 좁을 때를 생각해 시간을 앞에)
       var title = head.b.n + ' · ' + timeTxt;
@@ -756,6 +787,10 @@
       els.miniTime.textContent = '--:--';
       els.miniCut.hidden = true;
       els.heroCut.hidden = true;
+      els.stripCut.hidden = true;
+      els.stripName.textContent = '표시할 보스 없음';
+      els.stripTime.textContent = '--:--';
+      els.stripSub.textContent = '';
       if (document.title !== '제우스 보스 시계') document.title = '제우스 보스 시계';
     }
 
@@ -767,11 +802,10 @@
 
   els.miniCut.addEventListener('click', function () { if (headBoss) doCut(headBoss); });
   els.heroCut.addEventListener('click', function () { if (headBoss) doCut(headBoss); });
+  els.stripCut.addEventListener('click', function () { if (headBoss) doCut(headBoss); });
 
   // ---- 표시 모드: 창 크기에 따라 ----
-  var forced = null;
   function pickMode() {
-    if (forced) return forced;
     var w = window.innerWidth, h = window.innerHeight;
     if (h < 240 || (w < 320 && h < 420)) return 'compact';
     if (w < 470) return 'list';
@@ -781,10 +815,6 @@
     var m = pickMode();
     app.className = 'app mode-' + m;
   }
-  document.getElementById('stripFull').addEventListener('click', function () {
-    forced = forced === 'full' ? null : 'full';
-    applyMode();
-  });
   window.addEventListener('resize', applyMode);
 
   function systemDark() {
