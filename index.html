@@ -335,7 +335,7 @@
     { n: '아라크네',         lv: 50, loc: '테살리아',          type: 'weekly', wd: 3, hour: 21 },
     { n: '케르베로스',       lv: 75, loc: '타르타로스 5계',    type: 'weekly', wd: 5, hour: 21 },
     { n: '키메라',           lv: 60, loc: '타르타로스 4계',    type: 'weekly', wd: 6, hour: 21 },
-    { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', hours: [12, 20] },
+    { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', hours: [0, 12, 18] },
     { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:43:40' },
     { n: '아모르포스',       lv: 35, loc: '침식된 경작지',     type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:45:40' },
     { n: '트라손',           lv: 40, loc: '고대 신전 유적지',  type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:47:40' },
@@ -669,7 +669,7 @@
       // 주간·일일 콘텐츠는 컷을 치지 않는다. 시각이 지나는 순간 다음 회차로 자동으로 넘어간다.
       acts.className = 'when';
       acts.textContent = (b.type === 'daily')
-        ? ('자동 · 매일 ' + b.hours.join('·') + '시')
+        ? ('자동 · 매일 ' + b.hours.map(function (h) { return h < 10 ? '0' + h : h; }).join('·') + '시')
         : ('자동 · ' + WD[b.wd] + ' ' + b.hour + '시');
     }
     el._rem = el.querySelector('.rem');
@@ -771,7 +771,7 @@
         : (head.b.type === 'weekly'
             ? ('매주 ' + WD[head.b.wd] + '요일 ' + head.b.hour + '시 · 컷 없이 자동')
             : head.b.type === 'daily'
-              ? ('매일 ' + head.b.hours.join('시, ') + '시 · 컷 없이 자동')
+              ? ('매일 ' + head.b.hours.map(function (h) { return (h < 10 ? '0' + h : h) + '시'; }).join(', ') + ' · 컷 없이 자동')
               : ('젠 주기 ' + head.b.cyc + '시간'));
       els.nextName.textContent = head.b.n;
       els.nextLoc.textContent = 'Lv.' + head.b.lv + ' · ' + head.b.loc;

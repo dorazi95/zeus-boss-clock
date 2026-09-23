@@ -26,7 +26,7 @@ $Bosses = @(
   @{ Name='아라크네';          Lv=50; Type='weekly'; Weekday=3; Hour=21 }
   @{ Name='케르베로스';        Lv=75; Type='weekly'; Weekday=5; Hour=21 }
   @{ Name='키메라';            Lv=60; Type='weekly'; Weekday=6; Hour=21 }
-  @{ Name='심연의 틈';         Lv=0;  Type='daily';  Hours=@(12, 20) }
+  @{ Name='심연의 틈';         Lv=0;  Type='daily';  Hours=@(0, 12, 18) }
   @{ Name='크리소파고스';      Lv=35; Type='cycle' }
   @{ Name='아모르포스';        Lv=35; Type='cycle' }
   @{ Name='트라손';            Lv=40; Type='cycle' }
