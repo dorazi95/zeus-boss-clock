@@ -26,7 +26,9 @@ $Bosses = @(
   @{ Name='아라크네';          Lv=50; Type='weekly'; Weekday=3; Hour=21 }
   @{ Name='케르베로스';        Lv=75; Type='weekly'; Weekday=5; Hour=21 }
   @{ Name='키메라';            Lv=60; Type='weekly'; Weekday=6; Hour=21 }
-  @{ Name='심연의 틈';         Lv=0;  Type='daily';  Hours=@(0, 12, 18) }
+  @{ Name='선봉의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
+  @{ Name='함락의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
+  @{ Name='심연의 틈';         Lv=0;  Type='daily';  Hours=@(0, 12, 18); Lead=$false }
   @{ Name='크리소파고스';      Lv=35; Type='cycle' }
   @{ Name='아모르포스';        Lv=35; Type='cycle' }
   @{ Name='트라손';            Lv=40; Type='cycle' }
@@ -97,9 +99,14 @@ function Sync-Pull {
 
 # ---------- 시간 계산 ----------
 function Next-Weekly($b, $now) {
-  $d = $now.Date.AddHours([int]$b.Hour).AddDays((([int]$b.Weekday - [int]$now.DayOfWeek) + 7) % 7)
-  while ($d -le $now) { $d = $d.AddDays(7) }
-  return $d
+  $days = if ($b.Weekdays) { $b.Weekdays } else { @($b.Weekday) }
+  $best = $null
+  foreach ($wd in $days) {
+    $d = $now.Date.AddHours([int]$b.Hour).AddDays((([int]$wd - [int]$now.DayOfWeek) + 7) % 7)
+    while ($d -le $now) { $d = $d.AddDays(7) }
+    if ($null -eq $best -or $d -lt $best) { $best = $d }
+  }
+  return $best
 }
 function Next-Daily($b, $now) {
   $best = $null
@@ -411,8 +418,11 @@ $timer.Add_Tick({
   foreach ($it in $pend) { Check-Alert $it ($it.T - $now) }
   $script:Primed = $true
 
-  if (@($list).Count -gt 0) {
-    $m = @($list)[0]
+  # Lead=$false 인 콘텐츠(심연의 틈)는 큰 칸의 대표 자리에 올리지 않는다
+  $leadList = @($list | Where-Object { $_.B.Lead -ne $false })
+  $rest = @($list | Where-Object { -not ($leadList.Count -gt 0 -and $_ -eq $leadList[0]) })
+  if ($leadList.Count -gt 0) {
+    $m = $leadList[0]
     $rem = $m.T - $now
     $lblName.Text = [string]$m.B.Name
     if ($m.T -le $now) {
@@ -431,8 +441,8 @@ $timer.Add_Tick({
     $lblTime.Text = '--:--'
     $lblTime.ForeColor = $script:P.DIM
   }
-  Set-Preview $slotL $slotLT $list 1
-  Set-Preview $slotR $slotRT $list 2
+  Set-Preview $slotL $slotLT $rest 0
+  Set-Preview $slotR $slotRT $rest 1
   if (-not $script:Online) { $lblName.Text = $lblName.Text + '  (오프라인)' }
 })
 

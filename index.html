@@ -335,7 +335,9 @@
     { n: '아라크네',         lv: 50, loc: '테살리아',          type: 'weekly', wd: 3, hour: 21 },
     { n: '케르베로스',       lv: 75, loc: '타르타로스 5계',    type: 'weekly', wd: 5, hour: 21 },
     { n: '키메라',           lv: 60, loc: '타르타로스 4계',    type: 'weekly', wd: 6, hour: 21 },
-    { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', hours: [0, 12, 18] },
+    { n: '선봉의 스코톨라스마', lv: 40, loc: '테살리아',        type: 'weekly', wds: [4, 1], hour: 21 },
+    { n: '함락의 스코톨라스마', lv: 40, loc: '테살리아',        type: 'weekly', wds: [4, 1], hour: 21 },
+    { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', hours: [0, 12, 18], lead: false },
     { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:43:40' },
     { n: '아모르포스',       lv: 35, loc: '침식된 경작지',     type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:45:40' },
     { n: '트라손',           lv: 40, loc: '고대 신전 유적지',  type: 'cycle', cyc: 8,  kill: 1,  at: '2026-09-16T19:47:40' },
@@ -357,8 +359,8 @@
 
   function clone(list) {
     return list.map(function (b) {
-      return { n: b.n, lv: b.lv, loc: b.loc, type: b.type, wd: b.wd, hour: b.hour,
-               hours: b.hours, cyc: b.cyc, kill: b.kill, at: b.at, on: b.on !== false };
+      return { n: b.n, lv: b.lv, loc: b.loc, type: b.type, wd: b.wd, wds: b.wds, hour: b.hour,
+               hours: b.hours, lead: b.lead !== false, cyc: b.cyc, kill: b.kill, at: b.at, on: b.on !== false };
     });
   }
 
@@ -575,10 +577,15 @@
   }
 
   function nextWeekly(b, now) {
-    var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), b.hour, 0, 0, 0);
-    d.setDate(d.getDate() + ((b.wd - now.getDay() + 7) % 7));
-    while (d <= now) d.setDate(d.getDate() + 7);
-    return d;
+    var days = b.wds || [b.wd];
+    var best = null;
+    for (var i = 0; i < days.length; i++) {
+      var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), b.hour, 0, 0, 0);
+      d.setDate(d.getDate() + ((days[i] - now.getDay() + 7) % 7));
+      while (d <= now) d.setDate(d.getDate() + 7);
+      if (!best || d < best) best = d;
+    }
+    return best;
   }
 
   function spawnOf(b, now) {
@@ -670,7 +677,7 @@
       acts.className = 'when';
       acts.textContent = (b.type === 'daily')
         ? ('자동 · 매일 ' + b.hours.map(function (h) { return h < 10 ? '0' + h : h; }).join('·') + '시')
-        : ('자동 · ' + WD[b.wd] + ' ' + b.hour + '시');
+        : ('자동 · ' + (b.wds || [b.wd]).map(function (w) { return WD[w]; }).join('·') + ' ' + b.hour + '시');
     }
     el._rem = el.querySelector('.rem');
     return el;
@@ -743,7 +750,9 @@
 
     // 체크된 보스만 — 다음 보스 / 목록
     var shown = all.filter(function (it) { return it.b.on; }).sort(byTime);
-    var top = shown.slice(1, STRIP_COUNT);   // 첫 번째는 위에 크게 뜨므로 목록에서는 뺀다
+    // lead:false 인 콘텐츠(심연의 틈처럼 하루 한 번만 가면 되는 것)는 대표 자리에 올리지 않는다
+    var lead = shown.filter(function (it) { return it.b.lead !== false; })[0];
+    var top = shown.filter(function (it) { return it !== lead; }).slice(0, STRIP_COUNT - 1);
     var sig = top.map(function (it) { return it.b.n; }).join('|');
     if (sig !== lastStrip) {
       lastStrip = sig;
@@ -761,7 +770,7 @@
       if (el._cut) el._cut.hidden = !(it.up || warn);
     });
 
-    var head = shown[0];
+    var head = lead;
     headBoss = head ? head.b : null;
     if (head) {
       var left = head.t - now;
@@ -769,7 +778,7 @@
       var timeTxt = head.up ? '출현 중' : fmtLong(left);
       var noteTxt = head.up ? ('출현한 지 ' + fmtLong(now - head.t) + ' 지났습니다')
         : (head.b.type === 'weekly'
-            ? ('매주 ' + WD[head.b.wd] + '요일 ' + head.b.hour + '시 · 컷 없이 자동')
+            ? ('매주 ' + (head.b.wds || [head.b.wd]).map(function (w) { return WD[w] + '요일'; }).join(', ') + ' ' + head.b.hour + '시 · 컷 없이 자동')
             : head.b.type === 'daily'
               ? ('매일 ' + head.b.hours.map(function (h) { return (h < 10 ? '0' + h : h) + '시'; }).join(', ') + ' · 컷 없이 자동')
               : ('젠 주기 ' + head.b.cyc + '시간'));
