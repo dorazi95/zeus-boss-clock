@@ -171,6 +171,8 @@
   .sect-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 8px; }
   .sect-head h2 { font-size: 13px; font-weight: 700; letter-spacing: .04em; margin: 0; }
   .sect-head .hint { font-size: 12px; color: var(--dim); }
+  .sect-head .opt { margin-left: auto; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+  .sect-head .opt input { width: 14px; height: 14px; accent-color: var(--accent-solid); cursor: pointer; }
 
   .thead, .row {
     display: grid;
@@ -301,6 +303,7 @@
             <div class="sect-head">
               <h2>보스 목록</h2>
               <span class="hint">가까운 순 · 체크한 보스만 작은 창·목록 창에 나옵니다</span>
+              <label class="opt"><input type="checkbox" id="leadOpt"> 심연의 틈도 맨 위 다음 보스에 표시</label>
             </div>
             <div class="thead">
               <div>표시</div><div>Lv</div><div>보스</div><div>지역</div><div class="r">남은 시간</div><div class="r">컷 · 출현</div>
@@ -355,7 +358,7 @@
   var KEY = 'zeus-boss-clock-v1';
   var STRIP_COUNT = 6;
 
-  var state = { theme: 'auto', sound: false, bosses: null };
+  var state = { theme: 'auto', sound: false, leadAll: false, bosses: null };
 
   function clone(list) {
     return list.map(function (b) {
@@ -374,6 +377,7 @@
     if (!saved) return;
     if (saved.theme === 'light' || saved.theme === 'dark' || saved.theme === 'auto') state.theme = saved.theme;
     if (typeof saved.sound === 'boolean') state.sound = saved.sound;
+    if (typeof saved.leadAll === 'boolean') state.leadAll = saved.leadAll;
     if (!saved.bosses) return;
     state.bosses.forEach(function (b) {
       var s = saved.bosses[b.n];
@@ -386,7 +390,7 @@
   }
 
   function save() {
-    var out = { theme: state.theme, sound: state.sound, bosses: {} };
+    var out = { theme: state.theme, sound: state.sound, leadAll: state.leadAll, bosses: {} };
     state.bosses.forEach(function (b) {
       out.bosses[b.n] = { at: b.at, cyc: b.cyc, kill: b.kill, on: b.on };
     });
@@ -751,7 +755,7 @@
     // 체크된 보스만 — 다음 보스 / 목록
     var shown = all.filter(function (it) { return it.b.on; }).sort(byTime);
     // lead:false 인 콘텐츠(심연의 틈처럼 하루 한 번만 가면 되는 것)는 대표 자리에 올리지 않는다
-    var lead = shown.filter(function (it) { return it.b.lead !== false; })[0];
+    var lead = shown.filter(function (it) { return state.leadAll || it.b.lead !== false; })[0];
     var top = shown.filter(function (it) { return it !== lead; }).slice(0, STRIP_COUNT - 1);
     var sig = top.map(function (it) { return it.b.n; }).join('|');
     if (sig !== lastStrip) {
@@ -966,7 +970,15 @@
     }
   }
 
-  load(); paintTheme(); paintSound(); applyMode(); tick();
+  var leadOpt = document.getElementById('leadOpt');
+  leadOpt.addEventListener('change', function () {
+    state.leadAll = leadOpt.checked;
+    save(); lastStrip = ''; tick();
+  });
+
+  load();
+  leadOpt.checked = state.leadAll;   // 저장된 설정을 읽은 뒤에 반영
+  paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
   setInterval(tick, 1000);
   checkUpdate();
