@@ -220,6 +220,13 @@
   }
 
   .scrim { position: fixed; inset: 0; background: rgba(10,13,20,.6); z-index: 20; display: grid; place-items: center; padding: 16px; }
+  .blist { display: grid; gap: 2px; max-height: 52vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+  .blist label { display: flex; align-items: center; gap: 9px; padding: 7px 6px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
+  .blist label:hover { background: var(--panel-2); }
+  .blist input { width: 15px; height: 15px; accent-color: var(--accent-solid); cursor: pointer; }
+  .blist .lv { font-family: var(--font-mono); font-size: 11px; color: var(--dim); min-width: 22px; }
+  .optline { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); padding: 8px 6px; border-radius: 8px; background: var(--panel-2); cursor: pointer; }
+  .optline input { width: 15px; height: 15px; accent-color: var(--accent-solid); cursor: pointer; }
   .sheet { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 13px; box-shadow: var(--shadow); }
   .sheet h2 { font-size: 16px; font-weight: 700; margin: 0; }
   .sheet .sub { font-size: 12.5px; color: var(--muted); margin: -9px 0 0; }
@@ -260,6 +267,7 @@
       <div class="strip-head">
         <span class="t">다음 보스</span>
         <button class="chip small pip-btn" type="button" hidden>작은 창</button>
+        <button class="chip small" id="stripSet" type="button">설정</button>
         <span class="clock" id="stripClock"></span>
       </div>
       <div class="nm" id="stripName">—</div>
@@ -885,6 +893,56 @@
     state.theme = dark ? 'light' : 'dark';
     paintTheme(); save();
   });
+
+  // ---------- 표시 설정 (좁은 화면·모바일용) ----------
+  function openSettings() {
+    scrim = document.createElement('div');
+    scrim.className = 'scrim';
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="표시 설정">' +
+        '<h2>표시 설정</h2>' +
+        '<p class="sub">체크한 보스만 목록과 다음 보스에 나옵니다. 이 설정은 내 기기에만 저장됩니다.</p>' +
+        '<label class="optline"><input type="checkbox" id="s-lead"> 심연의 틈도 맨 위 다음 보스에 표시</label>' +
+        '<div class="blist" id="s-list"></div>' +
+        '<div class="actions"><button class="btn primary" id="s-close" type="button">닫기</button></div>' +
+      '</div>';
+    document.body.appendChild(scrim);
+
+    var leadBox = scrim.querySelector('#s-lead');
+    leadBox.checked = state.leadAll;
+    leadBox.addEventListener('change', function () {
+      state.leadAll = leadBox.checked;
+      if (leadOpt) leadOpt.checked = state.leadAll;
+      save(); lastStrip = ''; tick();
+    });
+
+    var list = scrim.querySelector('#s-list');
+    state.bosses.forEach(function (b) {
+      var lab = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = b.on;
+      cb.addEventListener('change', function () {
+        b.on = cb.checked;
+        var row = cache[b.n];
+        if (row) row.classList.toggle('hidden-boss', !b.on);
+        var tableBox = row ? row.querySelector('input[type="checkbox"]') : null;
+        if (tableBox) tableBox.checked = b.on;
+        save(); lastOrder = ''; lastStrip = ''; tick();
+      });
+      var lv = document.createElement('span');
+      lv.className = 'lv';
+      lv.textContent = b.lv ? b.lv : '—';
+      var nm = document.createElement('span');
+      nm.textContent = b.n;
+      lab.appendChild(cb); lab.appendChild(lv); lab.appendChild(nm);
+      list.appendChild(lab);
+    });
+
+    scrim.querySelector('#s-close').addEventListener('click', closeSheet);
+    scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
+  }
+  document.getElementById('stripSet').addEventListener('click', openSettings);
 
   var scrim = null;
   function openSheet(b) {
