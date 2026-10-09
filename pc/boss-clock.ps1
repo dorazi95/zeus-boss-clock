@@ -30,14 +30,8 @@ $Bosses = @(
   @{ Name='함락의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
   @{ Name='심연의 틈';         Lv=0;  Type='daily';  Hours=@(0, 12, 18); Lead=$false }
   @{ Name='크리소파고스';      Lv=35; Type='cycle' }
-  @{ Name='아모르포스';        Lv=35; Type='cycle' }
-  @{ Name='트라손';            Lv=40; Type='cycle' }
-  @{ Name='이오칸토스';        Lv=45; Type='cycle' }
   @{ Name='키니 러우리';       Lv=45; Type='cycle' }
-  @{ Name='알라스토르';        Lv=55; Type='cycle' }
-  @{ Name='베딕스';            Lv=60; Type='cycle' }
   @{ Name='고트시스';          Lv=60; Type='cycle' }
-  @{ Name='트리포크';          Lv=65; Type='cycle' }
   @{ Name='거인의 세번째 손';  Lv=70; Type='cycle' }
   @{ Name='봉인된 아모르포스'; Lv=40; Type='cycle' }
   @{ Name='봉인된 브델레스';   Lv=45; Type='cycle' }
