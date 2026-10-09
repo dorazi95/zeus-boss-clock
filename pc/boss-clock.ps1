@@ -131,7 +131,7 @@ function Fmt-Short([timespan]$ts) {
   if ($ts.TotalHours -ge 1) { return ('{0}:{1:00}' -f [int][Math]::Floor($ts.TotalHours), $ts.Minutes) }
   return ('{0}분' -f $ts.Minutes)
 }
-# ---------- 5분 전 음성 알림 ----------
+# ---------- 3분 전 음성 알림 ----------
 # 브라우저와 달리 위젯은 클릭 없이도 소리를 낼 수 있다.
 $script:Warned = @{}
 $script:Primed = $false
@@ -153,13 +153,13 @@ function Announce([string]$name) {
   try { [System.Media.SystemSounds]::Exclamation.Play() } catch { }
   $s = Get-Synth
   if ($null -ne $s) {
-    try { [void]$s.SpeakAsync("$name 5분 전입니다") } catch { }
+    try { [void]$s.SpeakAsync("$name 3분 전입니다") } catch { }
   }
 }
 
 function Check-Alert($item, [timespan]$left) {
   $k = [string]$item.B.Name + '|' + $item.T.Ticks
-  if ($left.TotalMilliseconds -gt 300000 -or $left.TotalMilliseconds -le 0) { return }
+  if ($left.TotalMilliseconds -gt 180000 -or $left.TotalMilliseconds -le 0) { return }
   if ($script:Warned.ContainsKey($k)) { return }
   $script:Warned[$k] = $true
   if ($script:Primed -and $script:Cfg.Sound) { Announce ([string]$item.B.Name) }
@@ -346,7 +346,7 @@ foreach ($c in @($f, $slotL, $slotLT, $slotR, $slotRT, $lblName, $lblTime)) {
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miTheme = $menu.Items.Add('다크 / 일반 모드 전환')
 $miTheme.Add_Click({ Toggle-Theme })
-$script:MiSound = $menu.Items.Add('5분 전 소리 알림')
+$script:MiSound = $menu.Items.Add('3분 전 소리 알림')
 $script:MiSound.CheckOnClick = $false
 $script:MiSound.Checked = [bool]$script:Cfg.Sound
 $script:MiSound.Add_Click({

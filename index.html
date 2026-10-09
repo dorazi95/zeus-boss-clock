@@ -325,7 +325,7 @@
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         보스는 젠 시각이 지나면 <b>출현 중</b>으로 계속 남아 있습니다. 잡은 뒤 <b>컷</b>을 눌러야 다음 젠을 다시 셉니다.<br>
         <b>연필</b> 버튼으로 게임 현황판의 남은 시간을 그대로 넣어 맞출 수 있습니다.<br>
-        <b>소리 켬</b>으로 두면 출현 5분 전에 "보스명 5분 전입니다"라고 알려줍니다.
+        <b>소리 켬</b>으로 두면 출현 3분 전에 "보스명 3분 전입니다"라고 알려줍니다.
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
         게임을 전체화면으로 하면 탭이 절전 상태가 되어 알림이 늦을 수 있는데, <b>작은 창</b>을 띄워두면 이를 막아줍니다.<br>
@@ -415,7 +415,7 @@
     } catch (e) { /* 무시 */ }
   }
 
-  // ---------- 5분 전 음성 알림 ----------
+  // ---------- 3분 전 음성 알림 ----------
   var warned = {}, primed = false, audioCtx = null, gestured = false;
 
   // 브라우저는 사용자가 페이지를 한 번 건드리기 전까지 소리를 막는다.
@@ -467,12 +467,12 @@
 
   function announce(name) {
     beep();
-    setTimeout(function () { speak(name + ' 5분 전입니다'); }, 420);
+    setTimeout(function () { speak(name + ' 3분 전입니다'); }, 420);
   }
 
   function checkAlert(it, left) {
     var k = it.b.n + '|' + it.t.getTime();
-    if (left > 300000 || left <= 0) return;
+    if (left > 180000 || left <= 0) return;
     if (warned[k]) return;
     warned[k] = true;
     if (primed && state.sound) announce(it.b.n);
@@ -872,7 +872,7 @@
     if (soundLabel.textContent !== label) soundLabel.textContent = label;
     soundBtn.title = !state.sound ? '소리 알림이 꺼져 있습니다'
       : (blocked ? '브라우저가 소리를 막고 있습니다. 페이지를 한 번 클릭하면 풀립니다.'
-                 : '출현 5분 전에 소리와 음성으로 알립니다');
+                 : '출현 3분 전에 소리와 음성으로 알립니다');
   }
   soundBtn.addEventListener('click', function () {
     state.sound = !state.sound;
