@@ -275,6 +275,7 @@
         <button class="chip" id="soundBtn" type="button" aria-pressed="false">
           <span class="dot"></span><span id="soundLabel">소리 끔</span>
         </button>
+        <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
         <button class="chip pip-btn" type="button" hidden>작은 창</button>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">다크 모드</span></button>
       </header>
@@ -308,11 +309,12 @@
   <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         <b>모든 보스가 고정 시간 젠입니다.</b> 컷을 누를 일이 없고, 젠 시각이 지나면 자동으로 다음 회차로 넘어갑니다. 표 오른쪽에 보스별 젠 시각이 적혀 있습니다.<br>
-        <b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다. 조정한 값은 내 브라우저에만 저장됩니다.<br>
+        <b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다.<br>
         <b>소리 켬</b>으로 두면 출현 3분 전에 "보스명 3분 전입니다"라고 알려줍니다.
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
         게임을 전체화면으로 하면 탭이 절전 상태가 되어 알림이 늦을 수 있는데, <b>작은 창</b>을 띄워두면 이를 막아줍니다.<br>
+        <b>조정한 젠 시각은 이 링크를 쓰는 모두가 같이 봅니다.</b> 한 사람이 맞추면 몇 초 안에 전원 화면에 반영되고, <b>기본값</b>을 누르면 모두 원래 시간표로 돌아갑니다.<br>
         체크박스 · 테마 · 창 모드는 각자 브라우저에만 저장됩니다.
       </p>
     </div>
@@ -506,6 +508,89 @@
     return m + ':' + p(sec);
   }
 
+  // ---------- 공유 저장소 (조정한 젠 시각은 모두가 같은 값을 본다) ----------
+  // 규칙상 열려 있는 경로가 /cuts 라서 그대로 쓴다. 담기는 값은 젠 시간표다.
+  var DB = 'https://zeus-boss-clock-default-rtdb.firebaseio.com';
+  var shareOk = null;
+
+  function keyOf(name) { return name.replace(/[.#$\[\]\/\s]/g, '_'); }
+  function bossByKey(k) {
+    for (var i = 0; i < state.bosses.length; i++) {
+      if (keyOf(state.bosses[i].n) === k) return state.bosses[i];
+    }
+    return null;
+  }
+  function setShareState(ok) {
+    if (shareOk === ok) return;
+    shareOk = ok;
+    shareChip.setAttribute('aria-pressed', ok ? 'true' : 'false');
+    shareLabel.textContent = ok ? '공유 중' : '연결 끊김';
+    shareChip.title = ok ? '조정한 젠 시각을 친구들과 같이 씁니다'
+                         : '공유 서버에 연결하지 못했습니다. 조정값이 이 브라우저에만 남습니다.';
+  }
+
+  function pushTimes(b) {
+    try {
+      fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ times: b.times, base: (SEED_TIMES[b.n] || []).join(','), t: Date.now() })
+      }).then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
+    } catch (e) { setShareState(false); }
+  }
+  function clearTimes(b) {
+    try {
+      fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', { method: 'DELETE' })
+        .then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
+    } catch (e) { setShareState(false); }
+  }
+
+  // 서버 값이 기본 시간표를 기준으로 조정된 것일 때만 받는다.
+  // 게임 패치로 시간표가 바뀌면 base 가 달라져 옛 조정값은 저절로 버려진다.
+  function takeTimes(key, v) {
+    var b = bossByKey(key);
+    if (!b || !b.times || !SEED_TIMES[b.n]) return false;
+    var want = (v && v.times && v.times.length && v.base === SEED_TIMES[b.n].join(','))
+      ? v.times.slice() : SEED_TIMES[b.n].slice();
+    if (b.times.join(',') === want.join(',')) return false;
+    b.times = want;
+    var row = cache[b.n];
+    if (row && row._when) row._when.textContent = whenText(b);
+    return true;
+  }
+
+  function applyRemote(path, data, full) {
+    var changed = false;
+    if (path === '/') {
+      state.bosses.forEach(function (b) {
+        if (!b.times) return;
+        var k = keyOf(b.n);
+        var v = (data && Object.prototype.hasOwnProperty.call(data, k)) ? data[k] : null;
+        if (!full && v === null) return;        // patch 는 적힌 것만 건드린다
+        if (takeTimes(k, v)) changed = true;
+      });
+    } else {
+      var key = path.replace(/^\//, '').split('/')[0];
+      if (takeTimes(key, data)) changed = true;
+    }
+    if (changed) { save(); warned = {}; lastOrder = ''; lastStrip = ''; tick(); }
+  }
+
+  function connectShare() {
+    if (typeof EventSource === 'undefined') { setShareState(false); return; }
+    var es;
+    try { es = new EventSource(DB + '/cuts.json'); } catch (e) { setShareState(false); return; }
+    es.addEventListener('put', function (e) {
+      setShareState(true);
+      try { var m = JSON.parse(e.data); applyRemote(m.path, m.data, true); } catch (err) { /* 무시 */ }
+    });
+    es.addEventListener('patch', function (e) {
+      setShareState(true);
+      try { var m = JSON.parse(e.data); applyRemote(m.path, m.data, false); } catch (err) { /* 무시 */ }
+    });
+    es.onopen = function () { setShareState(true); };
+    es.onerror = function () { setShareState(false); };
+  }
+
   function parseRemain(str) {
     if (!str) return null;
     var s = String(str).trim(), m;
@@ -534,6 +619,8 @@
     stripName: document.getElementById('stripName'), stripTime: document.getElementById('stripTime'),
     stripSub: document.getElementById('stripSub')
   };
+  var shareChip = document.getElementById('shareChip');
+  var shareLabel = document.getElementById('shareLabel');
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
   var soundBtn = document.getElementById('soundBtn');
@@ -895,12 +982,14 @@
     scrim.querySelector('#a-reset').addEventListener('click', function () {
       if (!SEED_TIMES[b.n]) return;
       b.times = SEED_TIMES[b.n].slice();
+      clearTimes(b);
       afterAdjust(b); closeSheet();
     });
     scrim.querySelector('#a-cancel').addEventListener('click', closeSheet);
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
     scrim.querySelector('#a-ok').addEventListener('click', function () {
       b.times = applied();
+      pushTimes(b);
       afterAdjust(b); closeSheet();
     });
 
@@ -960,6 +1049,7 @@
   load();
   leadOpt.checked = state.leadAll;   // 저장된 설정을 읽은 뒤에 반영
   paintTheme(); paintSound(); applyMode(); tick();
+  connectShare();
   setInterval(tick, 1000);
   checkUpdate();
   setInterval(checkUpdate, 180000);
