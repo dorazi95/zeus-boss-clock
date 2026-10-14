@@ -28,12 +28,12 @@ $Bosses = @(
   @{ Name='선봉의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
   @{ Name='함락의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
   @{ Name='심연의 틈';         Lv=0;  Type='daily'; Times=@('00:00','12:00','18:00'); Lead=$false }
-  @{ Name='크리소파고스';      Lv=35; Type='daily'; Times=@('00:29','08:29','16:29') }
-  @{ Name='고트시스';          Lv=60; Type='daily'; Times=@('00:33','08:33','16:33') }
-  @{ Name='키니 러우리';       Lv=45; Type='daily'; Times=@('00:38','12:38') }
-  @{ Name='봉인된 아모르포스'; Lv=40; Type='daily'; Times=@('00:44','08:44','16:44') }
-  @{ Name='봉인된 브델레스';   Lv=45; Type='daily'; Times=@('12:41') }
-  @{ Name='거인의 세번째 손';  Lv=70; Type='daily'; Times=@('00:45','12:42') }
+  @{ Name='크리소파고스';      Lv=35; Type='daily'; Times=@('00:29:43','08:29:43','16:29:43') }
+  @{ Name='고트시스';          Lv=60; Type='daily'; Times=@('00:33:43','08:33:43','16:33:43') }
+  @{ Name='키니 러우리';       Lv=45; Type='daily'; Times=@('00:38:00','12:39:43') }
+  @{ Name='봉인된 아모르포스'; Lv=40; Type='daily'; Times=@('00:43:49','08:43:49','16:43:49') }
+  @{ Name='봉인된 브델레스';   Lv=45; Type='daily'; Times=@('12:40:43') }
+  @{ Name='거인의 세번째 손';  Lv=70; Type='daily'; Times=@('00:40:46','12:42:00') }
 )
 
 # ---------- 설정 (위치, 테마) ----------
@@ -79,7 +79,7 @@ function Next-Daily($b, $now) {
   $best = $null
   foreach ($day in 0..1) {
     foreach ($t in $b.Times) {
-      $d = $now.Date.AddDays($day).AddHours([int]$t.Substring(0,2)).AddMinutes([int]$t.Substring(3,2))
+      $d = $now.Date.AddDays($day).AddHours([int]$t.Substring(0,2)).AddMinutes([int]$t.Substring(3,2)).AddSeconds($(if ($t.Length -gt 5) { [int]$t.Substring(6,2) } else { 0 }))
       if ($d -gt $now -and ($null -eq $best -or $d -lt $best)) { $best = $d }
     }
   }

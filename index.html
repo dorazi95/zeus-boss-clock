@@ -325,12 +325,12 @@
     { n: '함락의 스코톨라스마', lv: 40, loc: '테살리아',        type: 'weekly', wds: [4, 1], hour: 21 },
     // 아래는 모두 고정 시간 젠 — 컷을 칠 일이 없다
     { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', times: ['00:00', '12:00', '18:00'], lead: false },
-    { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'daily', times: ['00:29', '08:29', '16:29'] },
-    { n: '고트시스',         lv: 60, loc: '황금리라 부락',     type: 'daily', times: ['00:33', '08:33', '16:33'] },
-    { n: '키니 러우리',      lv: 45, loc: '금지된 숲',         type: 'daily', times: ['00:38', '12:38'] },
-    { n: '봉인된 아모르포스', lv: 40, loc: '유폐의 둥지',      type: 'daily', times: ['00:44', '08:44', '16:44'] },
-    { n: '봉인된 브델레스',   lv: 45, loc: '배신의 심연굴',    type: 'daily', times: ['12:41'] },
-    { n: '거인의 세번째 손', lv: 70, loc: '유적지 폐허',       type: 'daily', times: ['00:45', '12:42'], on: false }
+    { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'daily', times: ['00:29:43', '08:29:43', '16:29:43'] },
+    { n: '고트시스',         lv: 60, loc: '황금리라 부락',     type: 'daily', times: ['00:33:43', '08:33:43', '16:33:43'] },
+    { n: '키니 러우리',      lv: 45, loc: '금지된 숲',         type: 'daily', times: ['00:38:00', '12:39:43'] },
+    { n: '봉인된 아모르포스', lv: 40, loc: '유폐의 둥지',      type: 'daily', times: ['00:43:49', '08:43:49', '16:43:49'] },
+    { n: '봉인된 브델레스',   lv: 45, loc: '배신의 심연굴',    type: 'daily', times: ['12:40:43'] },
+    { n: '거인의 세번째 손', lv: 70, loc: '유적지 폐허',       type: 'daily', times: ['00:40:46', '12:42:00'], on: false }
   ];
   var WD = ['일', '월', '화', '수', '목', '금', '토'];
   var KEY = 'zeus-boss-clock-v1';
@@ -455,11 +455,13 @@
   // 고정 시간 젠 — 시각이 지나면 바로 다음 회차로 넘어간다
   function HH(t) { return +t.slice(0, 2); }
   function MM(t) { return +t.slice(3, 5); }
+  function SS(t) { return t.length > 5 ? +t.slice(6, 8) : 0; }
+  function hm(t) { return t.slice(0, 5); }
   function nextDaily(b, now) {
     var best = null;
     for (var day = 0; day <= 1; day++) {
       for (var i = 0; i < b.times.length; i++) {
-        var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + day, HH(b.times[i]), MM(b.times[i]), 0, 0);
+        var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + day, HH(b.times[i]), MM(b.times[i]), SS(b.times[i]), 0);
         if (d > now && (!best || d < best)) best = d;
       }
     }
@@ -534,7 +536,7 @@
     var acts = el.querySelector('.acts');
     acts.className = 'when';
     acts.textContent = (b.type === 'daily')
-      ? ('매일 ' + b.times.join(' · '))
+      ? ('매일 ' + b.times.map(hm).join(' · '))
       : ((b.wds || [b.wd]).map(function (w) { return WD[w]; }).join('·') + ' ' + b.hour + ':00');
     el._rem = el.querySelector('.rem');
     return el;
@@ -610,7 +612,7 @@
       var noteTxt = head.up ? ('출현한 지 ' + fmtLong(now - head.t) + ' 지났습니다')
         : (head.b.type === 'weekly'
             ? ('매주 ' + (head.b.wds || [head.b.wd]).map(function (w) { return WD[w] + '요일'; }).join(', ') + ' ' + head.b.hour + '시 고정')
-            : ('매일 ' + head.b.times.join(', ') + ' 고정'));
+            : ('매일 ' + head.b.times.map(hm).join(', ') + ' 고정'));
       els.nextName.textContent = head.b.n;
       els.nextLoc.textContent = 'Lv.' + head.b.lv + ' · ' + head.b.loc;
       els.nextTime.textContent = timeTxt;
