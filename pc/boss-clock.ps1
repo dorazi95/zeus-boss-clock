@@ -1,6 +1,6 @@
 ﻿# 제우스 보스 시계 - 출력 전용 위젯
-# 컷 입력과 설정은 웹(https://dorazi95.github.io/zeus-boss-clock/)에서 하고,
-# 이 위젯은 공유 서버의 시간을 받아 보여주기만 한다.
+# 모든 보스가 고정 시간 젠이라 컷 입력이 없다. 정해진 시각으로 혼자 돌며,
+# 설정은 웹(https://dorazi95.github.io/zeus-boss-clock/)에서 한다.
 
 # 이미 떠 있으면 중복 실행하지 않는다
 $script:__created = $false
@@ -13,7 +13,6 @@ Add-Type -AssemblyName System.Drawing
 
 $Root    = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $CfgPath = Join-Path $Root 'widget.json'
-$DbUrl   = 'https://zeus-boss-clock-default-rtdb.firebaseio.com'
 $WebUrl  = 'https://dorazi95.github.io/zeus-boss-clock/'
 
 # 화면에서 뺄 보스 (웹의 체크 해제와 같은 역할)
@@ -28,19 +27,18 @@ $Bosses = @(
   @{ Name='키메라';            Lv=60; Type='weekly'; Weekday=6; Hour=21 }
   @{ Name='선봉의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
   @{ Name='함락의 스코톨라스마'; Lv=40; Type='weekly'; Weekdays=@(4, 1); Hour=21 }
-  @{ Name='심연의 틈';         Lv=0;  Type='daily';  Hours=@(0, 12, 18); Lead=$false }
-  @{ Name='크리소파고스';      Lv=35; Type='cycle' }
-  @{ Name='키니 러우리';       Lv=45; Type='cycle' }
-  @{ Name='고트시스';          Lv=60; Type='cycle' }
-  @{ Name='거인의 세번째 손';  Lv=70; Type='cycle' }
-  @{ Name='봉인된 아모르포스'; Lv=40; Type='cycle' }
-  @{ Name='봉인된 브델레스';   Lv=45; Type='cycle' }
+  @{ Name='심연의 틈';         Lv=0;  Type='daily'; Times=@('00:00','12:00','18:00'); Lead=$false }
+  @{ Name='크리소파고스';      Lv=35; Type='daily'; Times=@('00:29','08:29','16:29') }
+  @{ Name='고트시스';          Lv=60; Type='daily'; Times=@('00:33','08:33','16:33') }
+  @{ Name='키니 러우리';       Lv=45; Type='daily'; Times=@('00:38','12:38') }
+  @{ Name='봉인된 아모르포스'; Lv=40; Type='daily'; Times=@('00:44','08:44','16:44') }
+  @{ Name='봉인된 브델레스';   Lv=45; Type='daily'; Times=@('12:41') }
+  @{ Name='거인의 세번째 손';  Lv=70; Type='daily'; Times=@('00:45','12:42') }
 )
-$script:Spawn = @{}   # 보스명 -> [datetime] (서버에서 받은 젠 시각)
 
 # ---------- 설정 (위치, 테마) ----------
 function Load-Cfg {
-  $c = [pscustomobject]@{ X = $null; Y = $null; Theme = 'dark'; Sound = $true; Spawn = @{} }
+  $c = [pscustomobject]@{ X = $null; Y = $null; Theme = 'dark'; Sound = $true }
   if (Test-Path $CfgPath) {
     try {
       $raw = Get-Content $CfgPath -Raw -Encoding UTF8
@@ -50,7 +48,6 @@ function Load-Cfg {
         if ($null -ne $j.Y) { $c.Y = [int]$j.Y }
         if ($j.Theme -eq 'light' -or $j.Theme -eq 'dark') { $c.Theme = $j.Theme }
         if ($null -ne $j.Sound) { $c.Sound = [bool]$j.Sound }
-        if ($j.Spawn) { foreach ($p in $j.Spawn.PSObject.Properties) { $c.Spawn[$p.Name] = [string]$p.Value } }
       }
     } catch { }
   }
@@ -58,38 +55,14 @@ function Load-Cfg {
 }
 function Save-Cfg {
   try {
-    $keep = @{}
-    foreach ($k in $script:Spawn.Keys) { $keep[$k] = $script:Spawn[$k].ToString('s') }
-    $out = [pscustomobject]@{ X = $script:Cfg.X; Y = $script:Cfg.Y; Theme = $script:Cfg.Theme; Sound = $script:Cfg.Sound; Spawn = $keep }
+    $out = [pscustomobject]@{ X = $script:Cfg.X; Y = $script:Cfg.Y; Theme = $script:Cfg.Theme; Sound = $script:Cfg.Sound }
     $tmp = $CfgPath + '.tmp'
     [System.IO.File]::WriteAllText($tmp, ($out | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($true)))
     Move-Item -LiteralPath $tmp -Destination $CfgPath -Force
   } catch { }
 }
 $script:Cfg = Load-Cfg
-foreach ($k in $script:Cfg.Spawn.Keys) {
-  try { $script:Spawn[$k] = [datetime]::Parse($script:Cfg.Spawn[$k]) } catch { }
-}
 
-# ---------- 서버에서 시간 받아오기 ----------
-function Boss-Key([string]$name) { return ($name -replace '[.#$\[\]/\s]', '_') }
-$script:Online = $false
-$script:LastPull = [datetime]::MinValue
-
-function Sync-Pull {
-  try {
-    $r = Invoke-RestMethod -Uri ($DbUrl + '/cuts.json') -Method GET -TimeoutSec 8
-  } catch { $script:Online = $false; return }
-  $script:Online = $true
-  if (-not $r) { return }
-  foreach ($b in $Bosses) {
-    if ($b.Type -ne 'cycle') { continue }
-    $v = $r.PSObject.Properties[(Boss-Key $b.Name)]
-    if (-not $v -or -not $v.Value.at) { continue }
-    try { $script:Spawn[$b.Name] = [datetime]::Parse([string]$v.Value.at) } catch { }
-  }
-  Save-Cfg
-}
 
 # ---------- 시간 계산 ----------
 function Next-Weekly($b, $now) {
@@ -105,8 +78,8 @@ function Next-Weekly($b, $now) {
 function Next-Daily($b, $now) {
   $best = $null
   foreach ($day in 0..1) {
-    foreach ($h in $b.Hours) {
-      $d = $now.Date.AddDays($day).AddHours([int]$h)
+    foreach ($t in $b.Times) {
+      $d = $now.Date.AddDays($day).AddHours([int]$t.Substring(0,2)).AddMinutes([int]$t.Substring(3,2))
       if ($d -gt $now -and ($null -eq $best -or $d -lt $best)) { $best = $d }
     }
   }
@@ -116,7 +89,7 @@ function Spawn-Of($b, $now) {
   switch ($b.Type) {
     'weekly' { return (Next-Weekly $b $now) }
     'daily'  { return (Next-Daily  $b $now) }
-    default  { if ($script:Spawn.ContainsKey($b.Name)) { return $script:Spawn[$b.Name] } else { return $null } }
+    default  { return (Next-Daily $b $now) }
   }
 }
 function Fmt-Span([timespan]$ts) {
@@ -355,7 +328,7 @@ $script:MiSound.Add_Click({
   Save-Cfg
   if ($script:Cfg.Sound) { Announce '소리 알림' }
 })
-$miWeb = $menu.Items.Add('웹에서 컷 입력하기')
+$miWeb = $menu.Items.Add('웹에서 보기')
 $miWeb.Add_Click({ Start-Process $WebUrl })
 $miPos = $menu.Items.Add('위치 초기화')
 $miPos.Add_Click({
@@ -395,7 +368,6 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1000
 $timer.Add_Tick({
   $now = Get-Date
-  if (($now - $script:LastPull).TotalSeconds -ge 15) { $script:LastPull = $now; Sync-Pull }
 
   $ups = New-Object System.Collections.ArrayList
   $pend = New-Object System.Collections.ArrayList
@@ -437,11 +409,9 @@ $timer.Add_Tick({
   }
   Set-Preview $slotL $slotLT $rest 0
   Set-Preview $slotR $slotRT $rest 1
-  if (-not $script:Online) { $lblName.Text = $lblName.Text + '  (오프라인)' }
 })
 
 Paint-Theme
-Sync-Pull
 $timer.Start()
 
 [System.Windows.Forms.Application]::Run($f)
