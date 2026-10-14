@@ -185,9 +185,16 @@
   .rem { font-family: var(--font-mono); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
   .row.up .rem { color: var(--accent); font-size: 13px; }
   .row.warn .rem { color: var(--danger); }
-  .acts { display: flex; gap: 6px; justify-content: flex-end; }
+  .acts { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
   .when { font-size: 12.5px; color: var(--muted); text-align: right; }
-
+  .edit { background: transparent; border: 1px solid var(--line); color: var(--dim); border-radius: 7px; width: 28px; height: 28px; font-size: 13px; cursor: pointer; display: grid; place-items: center; padding: 0; flex: 0 0 auto; }
+  .edit:hover { color: var(--text); border-color: var(--dim); }
+  .blist .edit { margin-left: auto; width: 26px; height: 26px; }
+  .nudge { display: flex; gap: 6px; }
+  .nudge button { flex: 1 1 0; font-family: var(--font-kr); font-size: 12.5px; font-weight: 700; background: transparent; color: var(--dim); border: 1px solid var(--line); border-radius: 7px; padding: 9px 0; cursor: pointer; }
+  .nudge button:hover { color: var(--text); border-color: var(--dim); }
+  .preview { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 0; }
+  .preview b { color: var(--accent); font-weight: 700; }
 
   .foot { color: var(--dim); font-size: 12.5px; line-height: 1.8; padding-top: 18px; border-top: 1px solid var(--line); }
   .foot b { color: var(--muted); font-weight: 500; }
@@ -223,7 +230,7 @@
   .btn.primary { background: var(--accent-solid); color: var(--on-accent); border-color: var(--accent-solid); font-weight: 700; }
 
   @media (prefers-reduced-motion: no-preference) {
-    .row, .srow, .chip { transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+    .row, .srow, .chip, .edit, .nudge button { transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
   }
 </style>
 
@@ -301,6 +308,7 @@
   <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         <b>모든 보스가 고정 시간 젠입니다.</b> 컷을 누를 일이 없고, 젠 시각이 지나면 자동으로 다음 회차로 넘어갑니다. 표 오른쪽에 보스별 젠 시각이 적혀 있습니다.<br>
+        <b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다. 조정한 값은 내 브라우저에만 저장됩니다.<br>
         <b>소리 켬</b>으로 두면 출현 3분 전에 "보스명 3분 전입니다"라고 알려줍니다.
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
@@ -332,6 +340,8 @@
     { n: '봉인된 브델레스',   lv: 45, loc: '배신의 심연굴',    type: 'daily', times: ['12:40:43'] },
     { n: '거인의 세번째 손', lv: 70, loc: '유적지 폐허',       type: 'daily', times: ['00:40:46', '12:42:00'], on: false }
   ];
+  var SEED_TIMES = {};
+  SEED.forEach(function (b) { if (b.times) SEED_TIMES[b.n] = b.times.slice(); });
   var WD = ['일', '월', '화', '수', '목', '금', '토'];
   var KEY = 'zeus-boss-clock-v1';
   var STRIP_COUNT = 6;
@@ -361,6 +371,7 @@
       var s = saved.bosses[b.n];
       if (!s) return;
       if (typeof s.on === 'boolean') b.on = s.on;
+      if (s.times && s.times.length && SEED_TIMES[b.n] && s.base === SEED_TIMES[b.n].join(',')) b.times = s.times.slice();
     });
   }
 
@@ -368,6 +379,7 @@
     var out = { theme: state.theme, sound: state.sound, leadAll: state.leadAll, bosses: {} };
     state.bosses.forEach(function (b) {
       out.bosses[b.n] = { on: b.on };
+      if (b.times) { out.bosses[b.n].times = b.times; out.bosses[b.n].base = (SEED_TIMES[b.n] || []).join(','); }
     });
     try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) { /* 저장 불가 환경 */ }
   }
@@ -494,6 +506,19 @@
     return m + ':' + p(sec);
   }
 
+  function parseRemain(str) {
+    if (!str) return null;
+    var s = String(str).trim(), m;
+    m = s.match(/^(\d+)\s*일\s*(\d+)\s*:\s*(\d+)(?:\s*:\s*(\d+))?$/);
+    if (m) return ((+m[1] * 24 + +m[2]) * 3600 + +m[3] * 60 + (+m[4] || 0)) * 1000;
+    m = s.match(/^(\d+)\s*:\s*(\d+)(?:\s*:\s*(\d+))?$/);
+    if (m) return (+m[1] * 3600 + +m[2] * 60 + (+m[3] || 0)) * 1000;
+    var h = s.match(/(\d+)\s*시간/), mm = s.match(/(\d+)\s*분/), ss = s.match(/(\d+)\s*초/);
+    if (h || mm || ss) return ((h ? +h[1] : 0) * 3600 + (mm ? +mm[1] : 0) * 60 + (ss ? +ss[1] : 0)) * 1000;
+    if (/^\d+$/.test(s)) return +s * 60000;
+    return null;
+  }
+
   var app = document.getElementById('app');
   var allRows = document.getElementById('allRows');
   var stripRows = document.getElementById('stripRows');
@@ -515,6 +540,25 @@
   var soundLabel = document.getElementById('soundLabel');
   var cache = {}, stripCache = {}, lastOrder = '', lastStrip = '';
 
+  function whenText(b) {
+    return (b.type === 'daily')
+      ? ('매일 ' + b.times.map(hm).join(' · '))
+      : ((b.wds || [b.wd]).map(function (w) { return WD[w]; }).join('·') + ' ' + b.hour + ':00');
+  }
+
+  function makeEdit(b) {
+    var edit = document.createElement('button');
+    edit.className = 'edit'; edit.type = 'button'; edit.textContent = '✎';
+    edit.title = '젠 시각 세부 조정';
+    edit.setAttribute('aria-label', b.n + ' 젠 시각 조정');
+    edit.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (scrim) closeSheet();
+      openAdjust(b);
+    });
+    return edit;
+  }
+
   function buildRow(b) {
     var el = document.createElement('div');
     el.className = 'row';
@@ -534,10 +578,12 @@
     el.classList.toggle('hidden-boss', !b.on);
     // 모든 보스가 고정 시간 젠이다. 시각이 지나는 순간 다음 회차로 자동으로 넘어간다.
     var acts = el.querySelector('.acts');
-    acts.className = 'when';
-    acts.textContent = (b.type === 'daily')
-      ? ('매일 ' + b.times.map(hm).join(' · '))
-      : ((b.wds || [b.wd]).map(function (w) { return WD[w]; }).join('·') + ' ' + b.hour + ':00');
+    var when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = whenText(b);
+    acts.appendChild(when);
+    el._when = when;
+    if (b.times) acts.appendChild(makeEdit(b));
     el._rem = el.querySelector('.rem');
     return el;
   }
@@ -745,6 +791,7 @@
       var nm = document.createElement('span');
       nm.textContent = b.n;
       lab.appendChild(cb); lab.appendChild(lv); lab.appendChild(nm);
+      if (b.times) lab.appendChild(makeEdit(b));
       list.appendChild(lab);
     });
 
@@ -754,6 +801,114 @@
   document.getElementById('stripSet').addEventListener('click', openSettings);
 
   var scrim = null;
+  // ---------- 젠 시각 세부 조정 ----------
+  function p2(v) { return (v < 10 ? '0' : '') + v; }
+  function norm(t) { return t.length > 5 ? t : t + ':00'; }
+  function hms(ms) {
+    if (ms < 0) ms = 0;
+    var s = Math.round(ms / 1000);
+    return Math.floor(s / 3600) + ':' + p2(Math.floor((s % 3600) / 60)) + ':' + p2(s % 60);
+  }
+  // 하루를 넘어가도 자동으로 돌아오도록 날짜가 있는 시각으로 계산한다
+  function shiftTime(t, sec) {
+    var d = new Date(2000, 0, 2, HH(t), MM(t), SS(t), 0);
+    d.setSeconds(d.getSeconds() + sec);
+    return p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+  }
+  function slotOf(b, t) {
+    var k = p2(t.getHours()) + ':' + p2(t.getMinutes()) + ':' + p2(t.getSeconds());
+    for (var i = 0; i < b.times.length; i++) if (norm(b.times[i]) === k) return i;
+    return 0;
+  }
+  function afterAdjust(b) {
+    save();
+    var row = cache[b.n];
+    if (row && row._when) row._when.textContent = whenText(b);
+    warned = {};
+    lastOrder = ''; lastStrip = '';
+    tick();
+  }
+
+  function openAdjust(b) {
+    var now = new Date();
+    var t = spawnOf(b, now);
+    var idx = slotOf(b, t);
+    var orig = b.times.slice();
+    var delta = 0;
+
+    scrim = document.createElement('div');
+    scrim.className = 'scrim';
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true">' +
+        '<h2></h2><p class="sub"></p>' +
+        '<div class="field"><label for="a-rem">현황판의 남은 시간</label>' +
+          '<input id="a-rem" autocomplete="off">' +
+          '<span class="hint">게임에 보이는 값 그대로 — 1분 33초, 7시간 50분, 0:01:33 모두 인식</span></div>' +
+        '<div class="nudge">' +
+          '<button type="button" data-d="-10">−10초</button>' +
+          '<button type="button" data-d="-1">−1초</button>' +
+          '<button type="button" data-d="1">+1초</button>' +
+          '<button type="button" data-d="10">+10초</button>' +
+        '</div>' +
+        '<label class="optline"><input type="checkbox" id="a-all" checked> 이 보스의 다른 젠 시각도 같은 만큼 이동</label>' +
+        '<p class="preview" id="a-prev"></p>' +
+        '<p class="err" id="a-err"></p>' +
+        '<div class="actions"><button class="btn" id="a-reset" type="button">기본값</button>' +
+        '<button class="btn" id="a-cancel" type="button">취소</button>' +
+        '<button class="btn primary" id="a-ok" type="button">저장</button></div>' +
+      '</div>';
+    document.body.appendChild(scrim);
+
+    scrim.querySelector('h2').textContent = b.n + ' 젠 시각 조정';
+    scrim.querySelector('.sub').textContent = 'Lv.' + b.lv + ' · ' + b.loc;
+    var remEl = scrim.querySelector('#a-rem'), allEl = scrim.querySelector('#a-all');
+    var prevEl = scrim.querySelector('#a-prev'), errEl = scrim.querySelector('#a-err');
+
+    function applied() {
+      return orig.map(function (x, i) { return (allEl.checked || i === idx) ? shiftTime(x, delta) : norm(x); });
+    }
+    function paint() {
+      var nt = applied();
+      prevEl.innerHTML = '다음 젠 <b>' + nt[idx] + '</b> · 남은 시간 ' + hms((t.getTime() + delta * 1000) - Date.now()) +
+        (delta ? '<br>' + (delta > 0 ? '+' : '') + delta + '초 · ' + orig.map(norm).join(' · ') + ' → ' + nt.join(' · ')
+               : '<br>' + orig.map(norm).join(' · '));
+    }
+    remEl.addEventListener('input', function () {
+      var ms = parseRemain(remEl.value);
+      if (ms === null) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; return; }
+      errEl.textContent = '';
+      delta = Math.round((Date.now() + ms - t.getTime()) / 1000);
+      paint();
+    });
+    var nb = scrim.querySelectorAll('.nudge button');
+    for (var i = 0; i < nb.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          delta += +btn.getAttribute('data-d');
+          errEl.textContent = '';
+          remEl.value = hms((t.getTime() + delta * 1000) - Date.now());
+          paint();
+        });
+      })(nb[i]);
+    }
+    allEl.addEventListener('change', paint);
+    scrim.querySelector('#a-reset').addEventListener('click', function () {
+      if (!SEED_TIMES[b.n]) return;
+      b.times = SEED_TIMES[b.n].slice();
+      afterAdjust(b); closeSheet();
+    });
+    scrim.querySelector('#a-cancel').addEventListener('click', closeSheet);
+    scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
+    scrim.querySelector('#a-ok').addEventListener('click', function () {
+      b.times = applied();
+      afterAdjust(b); closeSheet();
+    });
+
+    remEl.value = hms(t - now);
+    paint();
+    remEl.focus(); remEl.select();
+  }
+
   function closeSheet() { if (scrim) { scrim.remove(); scrim = null; } }
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
 
