@@ -921,7 +921,6 @@
     var t = spawnOf(b, now);
     var idx = slotOf(b, t);
     var orig = b.times.slice();
-    var delta = 0;
 
     scrim = document.createElement('div');
     scrim.className = 'scrim';
@@ -930,7 +929,7 @@
         '<h2></h2><p class="sub"></p>' +
         '<div class="field"><label for="a-rem">현황판의 남은 시간</label>' +
           '<input id="a-rem" autocomplete="off">' +
-          '<span class="hint">게임에 보이는 값 그대로 — 1분 33초, 7시간 50분, 0:01:33 모두 인식. 몇 초만 밀려면 아래 ±초 버튼을 쓰세요.</span></div>' +
+          '<span class="hint">이 시간은 <b>저장을 누르는 순간</b>부터 셉니다. 그대로 두고 3초 뒤에 누르면 3초 늦춰집니다.</span></div>' +
         '<div class="nudge">' +
           '<button type="button" data-d="-10">−10초</button>' +
           '<button type="button" data-d="-1">−1초</button>' +
@@ -951,41 +950,39 @@
     var remEl = scrim.querySelector('#a-rem'), allEl = scrim.querySelector('#a-all');
     var prevEl = scrim.querySelector('#a-prev'), errEl = scrim.querySelector('#a-err');
 
+    // 칸에 적힌 남은 시간을 "저장을 누른 그 순간"부터 센다.
+    // 창을 열어둔 채 기다렸다가 누르면 기다린 만큼 젠이 늦춰진다 — 컷 버튼과 같은 감각.
+    function curMs() { return parseRemain(remEl.value); }
     function applied() {
+      var ms = curMs();
+      if (ms === null) return null;
+      var delta = Math.round((Date.now() + ms - t.getTime()) / 1000);
       return orig.map(function (x, i) { return (allEl.checked || i === idx) ? shiftTime(x, delta) : norm(x); });
     }
     function paint() {
-      var nt = applied();
-      prevEl.innerHTML = '다음 젠 <b>' + nt[idx] + '</b> · 남은 시간 ' + hms((t.getTime() + delta * 1000) - Date.now()) +
-        (delta ? '<br>' + (delta > 0 ? '+' : '') + delta + '초 · ' + orig.map(norm).join(' · ') + ' → ' + nt.join(' · ')
-               : '<br>' + orig.map(norm).join(' · '));
+      var ms = curMs();
+      if (ms === null) { prevEl.innerHTML = ''; return; }
+      errEl.textContent = '';
+      prevEl.innerHTML = '<b>저장</b>을 누르면 다음 젠이 그 순간부터 <b>' + hms(ms) + '</b> 뒤가 됩니다.' +
+        '<br>지금 젠 시각 ' + orig.map(norm).join(' · ');
     }
-    var touched = false;
-    sheetTimer = setInterval(function () {
-      if (touched || document.activeElement === remEl) { paint(); return; }
-      remEl.value = hms(t - Date.now());
-      paint();
-    }, 1000);
 
     remEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); scrim.querySelector('#a-ok').click(); }
     });
     remEl.addEventListener('input', function () {
-      touched = true;
-      var ms = parseRemain(remEl.value);
-      if (ms === null) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; return; }
-      errEl.textContent = '';
-      delta = Math.round((Date.now() + ms - t.getTime()) / 1000);
+      if (curMs() === null) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; prevEl.innerHTML = ''; return; }
       paint();
     });
     var nb = scrim.querySelectorAll('.nudge button');
     for (var i = 0; i < nb.length; i++) {
       (function (btn) {
         btn.addEventListener('click', function () {
-          touched = true;
-          delta += +btn.getAttribute('data-d');
-          errEl.textContent = '';
-          remEl.value = hms((t.getTime() + delta * 1000) - Date.now());
+          var ms = curMs();
+          if (ms === null) ms = Math.max(0, t - Date.now());
+          ms += (+btn.getAttribute('data-d')) * 1000;
+          if (ms < 0) ms = 0;
+          remEl.value = hms(ms);
           paint();
         });
       })(nb[i]);
@@ -1000,13 +997,16 @@
     scrim.querySelector('#a-cancel').addEventListener('click', closeSheet);
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
     scrim.querySelector('#a-ok').addEventListener('click', function () {
-      b.times = applied();
+      var nt = applied();
+      if (!nt) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; return; }
+      b.times = nt;
       pushTimes(b);
       afterAdjust(b); closeSheet();
     });
 
     remEl.value = hms(t - now);
     paint();
+    remEl.focus(); remEl.select();
   }
 
   function closeSheet() { if (sheetTimer) { clearInterval(sheetTimer); sheetTimer = null; } if (scrim) { scrim.remove(); scrim = null; } }
