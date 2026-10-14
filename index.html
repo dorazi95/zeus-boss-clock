@@ -207,7 +207,7 @@
     .row .acts, .row .when { grid-column: 4; grid-row: 2; }
   }
 
-  .scrim { position: fixed; inset: 0; background: rgba(10,13,20,.6); z-index: 20; display: grid; place-items: center; padding: 16px; }
+  .scrim { position: fixed; inset: 0; background: rgba(10,13,20,.6); z-index: 20; display: grid; place-items: center; padding: 16px; overflow-y: auto; }
   .blist { display: grid; gap: 2px; max-height: 52vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
   .blist label { display: flex; align-items: center; gap: 9px; padding: 7px 6px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
   .blist label:hover { background: var(--panel-2); }
@@ -215,7 +215,8 @@
   .blist .lv { font-family: var(--font-mono); font-size: 11px; color: var(--dim); min-width: 22px; }
   .optline { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); padding: 8px 6px; border-radius: 8px; background: var(--panel-2); cursor: pointer; }
   .optline input { width: 15px; height: 15px; accent-color: var(--accent-solid); cursor: pointer; }
-  .sheet { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 13px; box-shadow: var(--shadow); }
+  .sheet { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 13px; box-shadow: var(--shadow); max-height: calc(100vh - 32px); overflow-y: auto; }
+  @supports (height: 100dvh) { .sheet { max-height: calc(100dvh - 32px); } }
   .sheet h2 { font-size: 16px; font-weight: 700; margin: 0; }
   .sheet .sub { font-size: 12.5px; color: var(--muted); margin: -9px 0 0; }
   .field { display: grid; gap: 5px; }
@@ -959,6 +960,9 @@
         (delta ? '<br>' + (delta > 0 ? '+' : '') + delta + '초 · ' + orig.map(norm).join(' · ') + ' → ' + nt.join(' · ')
                : '<br>' + orig.map(norm).join(' · '));
     }
+    remEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); scrim.querySelector('#a-ok').click(); }
+    });
     remEl.addEventListener('input', function () {
       var ms = parseRemain(remEl.value);
       if (ms === null) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; return; }
