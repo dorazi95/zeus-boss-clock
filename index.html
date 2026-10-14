@@ -628,7 +628,7 @@
 
   function whenText(b) {
     return (b.type === 'daily')
-      ? ('매일 ' + b.times.map(norm).join(' · '))
+      ? b.times.map(norm).join(' · ')
       : ((b.wds || [b.wd]).map(function (w) { return WD[w]; }).join('·') + ' ' + b.hour + ':00');
   }
 
