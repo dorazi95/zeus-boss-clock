@@ -887,7 +887,7 @@
   }
   document.getElementById('stripSet').addEventListener('click', openSettings);
 
-  var scrim = null;
+  var scrim = null, sheetTimer = null;
   // ---------- 젠 시각 세부 조정 ----------
   function p2(v) { return (v < 10 ? '0' : '') + v; }
   function norm(t) { return t.length > 5 ? t : t + ':00'; }
@@ -930,7 +930,7 @@
         '<h2></h2><p class="sub"></p>' +
         '<div class="field"><label for="a-rem">현황판의 남은 시간</label>' +
           '<input id="a-rem" autocomplete="off">' +
-          '<span class="hint">게임에 보이는 값 그대로 — 1분 33초, 7시간 50분, 0:01:33 모두 인식</span></div>' +
+          '<span class="hint">게임에 보이는 값 그대로 — 1분 33초, 7시간 50분, 0:01:33 모두 인식. 몇 초만 밀려면 아래 ±초 버튼을 쓰세요.</span></div>' +
         '<div class="nudge">' +
           '<button type="button" data-d="-10">−10초</button>' +
           '<button type="button" data-d="-1">−1초</button>' +
@@ -960,10 +960,18 @@
         (delta ? '<br>' + (delta > 0 ? '+' : '') + delta + '초 · ' + orig.map(norm).join(' · ') + ' → ' + nt.join(' · ')
                : '<br>' + orig.map(norm).join(' · '));
     }
+    var touched = false;
+    sheetTimer = setInterval(function () {
+      if (touched || document.activeElement === remEl) { paint(); return; }
+      remEl.value = hms(t - Date.now());
+      paint();
+    }, 1000);
+
     remEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); scrim.querySelector('#a-ok').click(); }
     });
     remEl.addEventListener('input', function () {
+      touched = true;
       var ms = parseRemain(remEl.value);
       if (ms === null) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; return; }
       errEl.textContent = '';
@@ -974,6 +982,7 @@
     for (var i = 0; i < nb.length; i++) {
       (function (btn) {
         btn.addEventListener('click', function () {
+          touched = true;
           delta += +btn.getAttribute('data-d');
           errEl.textContent = '';
           remEl.value = hms((t.getTime() + delta * 1000) - Date.now());
@@ -998,10 +1007,9 @@
 
     remEl.value = hms(t - now);
     paint();
-    remEl.focus(); remEl.select();
   }
 
-  function closeSheet() { if (scrim) { scrim.remove(); scrim = null; } }
+  function closeSheet() { if (sheetTimer) { clearInterval(sheetTimer); sheetTimer = null; } if (scrim) { scrim.remove(); scrim = null; } }
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
 
   try {
