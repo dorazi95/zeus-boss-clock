@@ -325,7 +325,7 @@
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         <b>모든 보스가 고정 시간 젠입니다.</b> 컷을 누를 일이 없고, 젠 시각이 지나면 자동으로 다음 회차로 넘어갑니다. 표 오른쪽에 보스별 젠 시각이 적혀 있습니다.<br>
         <b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다.<br>
-        <b>캡쳐</b> 버튼을 쓰면 게임 화면을 읽어 알아서 맞춥니다. 게임 창을 공유한 뒤 현황판 카드 여섯 장이 들어가게 한 번만 드래그해 두면, 그 뒤로는 현황판이 보일 때마다 자동으로 시각을 맞춥니다. 크롬·엣지 같은 PC 브라우저에서만 보이고, 처음 한 번은 글자 인식 데이터를 내려받느라 조금 걸립니다.<br>
+        <b>캡쳐</b> 버튼을 누르고 <b>게임 창만 골라 주면</b> 그 다음은 알아서 합니다. 현황판 자리를 찾고, 칸마다 어떤 보스인지 맞춰보고, 현황판이 보일 때마다 13초마다 읽어 시각을 고칩니다. 맞출 때마다 버튼에 결과가 잠깐 뜹니다. 크롬·엣지 같은 PC 브라우저에서만 보이고, 처음 한 번은 글자 인식 데이터를 내려받느라 20~30초 걸립니다. 자리를 못 찾으면 그때만 설정 창이 열립니다.<br>
         <b>소리 켬</b>으로 두면 출현 3분 전에 "보스명 3분 전입니다"라고 알려줍니다.
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
@@ -1054,7 +1054,9 @@
   function capOn() { return !!(cap.stream && cap.video); }
   function paintCap() {
     if (!capBtn) return;
-    var label = !capOn() ? '캡쳐' : (cap.auto ? '자동 읽는 중' : '캡쳐 켬');
+    // 방금 맞춘 결과는 잠깐 버튼에 띄워 준다
+    var flash = cap.flash && (Date.now() - cap.flash.t < 9000) ? cap.flash.s : null;
+    var label = flash ? flash : (!capOn() ? '캡쳐' : (cap.auto ? '자동 읽는 중' : '캡쳐 켬'));
     if (capLabel.textContent !== label) capLabel.textContent = label;
     capBtn.setAttribute('aria-pressed', capOn() ? 'true' : 'false');
     capBtn.title = !capOn() ? '게임 화면을 읽어 젠 시각을 맞춥니다'
@@ -1182,32 +1184,132 @@
   }
 
   // 화면을 한 번 읽어 [{칸 번호, 보스, 남은 초}] 를 돌려준다
-  function capRead(onProgress) {
-    var frame = capFrame(), at = Date.now();
+  // 게임이 현황판을 창 가운데에 같은 비율로 띄우므로, 창 크기와 상관없이
+  // 이 비율이면 대개 카드 여섯 장이 들어온다. 어긋나면 아래에서 조금씩 밀어가며 찾는다.
+  var CAP_GUESS = { x: 0.2904, y: 0.2497, w: 0.5415, h: 0.3745 };
+  function capShift(b, dx, dy, s) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2, w = b.w * s, h = b.h * s;
+    return { x: cx - w / 2 + dx, y: cy - h / 2 + dy, w: w, h: h };
+  }
+  function capCandidates() {
+    var list = [];
+    if (cap.box) list.push(cap.box);
+    list.push(CAP_GUESS);
+    [[0, -0.025, 1], [0, 0.025, 1], [-0.025, 0, 1], [0.025, 0, 1],
+     [0, 0, 0.92], [0, 0, 1.08], [0, -0.05, 1], [0, 0.05, 1]].forEach(function (v) {
+      list.push(capShift(CAP_GUESS, v[0], v[1], v[2]));
+    });
+    return list;
+  }
+
+  function capAbsOf(box, frame) {
+    return { x: box.x * frame.width, y: box.y * frame.height, w: box.w * frame.width, h: box.h * frame.height };
+  }
+
+  // 후보 영역에서 첫 두 칸이 읽히면 맞는 자리로 본다
+  function capProbe(worker, frame, box) {
+    var abs = capAbsOf(box, frame);
+    var c0 = capCell(abs, 0, 0), c1 = capCell(abs, 1 % cap.cols, cap.cols > 1 ? 0 : 1);
+    return capReadOne(worker, frame, capTimeRect(c0), CAP_TRIES.slice(0, 2)).then(function (a) {
+      if (a.sec == null) return false;
+      return capReadOne(worker, frame, capTimeRect(c1), CAP_TRIES.slice(0, 2)).then(function (b) {
+        return b.sec != null;
+      });
+    });
+  }
+
+  function capFind(onProgress) {
+    var frame = capFrame();
     if (!frame) return Promise.reject(new Error('캡쳐 화면이 없습니다'));
-    if (!cap.box) return Promise.reject(new Error('현황판 영역을 먼저 지정해 주세요'));
     return capWorker(onProgress).then(function (worker) {
-      var box = capAbsBox(frame), jobs = [], n = cap.cols * cap.rows;
-      for (var i = 0; i < n; i++) jobs.push(i);
-      var hits = [], k = 0;
+      var list = capCandidates(), k = 0;
       function step() {
-        if (k >= jobs.length) return Promise.resolve(hits);
-        var i = jobs[k++];
-        var name = cap.map[i];
-        if (!name) return step();
-        var cell = capCell(box, i % cap.cols, Math.floor(i / cap.cols));
-        return capReadOne(worker, frame, capTimeRect(cell), CAP_TRIES).then(function (r) {
-          if (r.sec != null) hits.push({ i: i, name: name, sec: r.sec, text: r.text, exact: /초/.test(r.text), at: at });
-          return step();
+        if (k >= list.length) return Promise.resolve(false);
+        var box = list[k++];
+        if (onProgress) onProgress('현황판 찾는 중… ' + k + '/' + list.length);
+        return capProbe(worker, frame, box).then(function (ok) {
+          if (!ok) return step();
+          cap.box = box; capSave();
+          return true;
         });
       }
       return step();
     });
   }
 
+  function capRead(onProgress) {
+    var frame = capFrame(), at = Date.now();
+    if (!frame) return Promise.reject(new Error('캡쳐 화면이 없습니다'));
+    if (!cap.box) return Promise.reject(new Error('현황판을 찾지 못했습니다'));
+    return capWorker(onProgress).then(function (worker) {
+      var box = capAbsBox(frame), n = cap.cols * cap.rows, hits = [], k = 0;
+      function step() {
+        if (k >= n) return Promise.resolve(hits);
+        var i = k++;
+        var cell = capCell(box, i % cap.cols, Math.floor(i / cap.cols));
+        return capReadOne(worker, frame, capTimeRect(cell), CAP_TRIES).then(function (r) {
+          if (r.sec != null) hits.push({ i: i, sec: r.sec, text: r.text, exact: /초/.test(r.text), at: at });
+          return step();
+        });
+      }
+      return step().then(function (h) { return capResolve(h); });
+    });
+  }
+
   function bossNamed(n) {
     for (var i = 0; i < state.bosses.length; i++) if (state.bosses[i].n === n) return state.bosses[i];
     return null;
+  }
+
+  // 칸마다 어떤 보스인지 정한다. 한 번 정해 두면 그대로 쓰고,
+  // 처음이면 읽어낸 남은 시간이 지금 시간표의 어느 보스와 가장 가까운지로 알아서 짝짓는다.
+  function capResolve(hits) {
+    var now = hits.length ? hits[0].at : Date.now();
+    var pairs = [];
+    hits.forEach(function (h) {
+      if (cap.map[h.i]) { h.name = cap.map[h.i]; return; }
+      var want = now + h.sec * 1000;
+      state.bosses.forEach(function (b) {
+        if (!b.times) return;
+        var t = spawnOf(b, new Date(now));
+        if (!t) return;
+        var d = Math.abs(t.getTime() - want);
+        if (d <= 600000) pairs.push({ h: h, b: b, d: d });
+      });
+    });
+    pairs.sort(function (x, y) { return x.d - y.d; });
+    var usedCell = {}, usedBoss = {};
+    Object.keys(cap.map).forEach(function (k) { if (cap.map[k]) usedBoss[cap.map[k]] = 1; });
+    pairs.forEach(function (p) {
+      if (p.h.name || usedCell[p.h.i] || usedBoss[p.b.n]) return;
+      p.h.name = p.b.n; usedCell[p.h.i] = 1; usedBoss[p.b.n] = 1;
+      cap.map[p.h.i] = p.b.n;
+    });
+    capSave();
+    return hits.filter(function (h) { return h.name; });
+  }
+
+  // 캡쳐 버튼 한 번으로 공유 → 현황판 찾기 → 보스 짝짓기 → 자동 켜기까지 끝낸다
+  function capQuick() {
+    cap.note = '공유할 게임 창을 골라 주세요';
+    paintCap();
+    return capStart().then(function () {
+      cap.note = '준비 중…'; paintCap();
+      return capFind(function (m) { cap.note = m; paintCap(); });
+    }).then(function (found) {
+      if (!found) {
+        cap.note = '현황판을 찾지 못했습니다';
+        paintCap();
+        openCapture();
+        var s = document.querySelector('#c-stat');
+        if (s) s.textContent = '현황판을 자동으로 찾지 못했습니다. 게임에서 현황판을 연 뒤, 위 그림에서 카드가 들어가게 드래그해 주세요.';
+        return;
+      }
+      capAuto(true);
+    }).catch(function (e) {
+      cap.note = e.message || '시작하지 못했습니다';
+      paintCap();
+    });
   }
 
   // 게임은 1시간이 넘으면 "2시간 48분"처럼 초를 빼고 보여준다. 그래서 한 번 읽은 값만으로는
@@ -1259,6 +1361,7 @@
     capRead(null).then(function (hits) {
       if (!hits.length) { cap.note = '현황판이 안 보입니다'; cap.win = {}; return; }
       var r = capApply(hits);
+      if (r.changed.length) cap.flash = { t: Date.now(), s: '맞춤 ' + r.changed[0] + (r.changed.length > 1 ? ' 외 ' + (r.changed.length - 1) : '') };
       cap.note = r.changed.length ? ('맞춤: ' + r.changed.join(', '))
                                   : (r.held ? '범위 좁히는 중 (' + hits.length + '종 읽음)' : '이미 맞음 (' + hits.length + '종 읽음)');
     }).catch(function (e) {
@@ -1279,10 +1382,10 @@
     scrim.innerHTML =
       '<div class="sheet cap-sheet" role="dialog" aria-modal="true" aria-label="게임 화면으로 시각 맞추기">' +
         '<h2>게임 화면으로 시각 맞추기</h2>' +
-        '<p class="sub">게임 창을 공유하면 현황판의 남은 시간을 읽어 젠 시각을 맞춥니다.</p>' +
+        '<p class="sub">게임 창을 공유하면 현황판의 남은 시간을 읽어 젠 시각을 맞춥니다. 보통은 손댈 것이 없습니다.</p>' +
         '<div class="capshot"><canvas id="c-cv"></canvas><div class="capsel" id="c-sel" hidden></div>' +
           '<div class="capempty" id="c-empty">아래 <b>게임 창 공유</b>를 눌러 주세요</div></div>' +
-        '<p class="caphint" id="c-hint">공유를 시작한 뒤, 위 그림에서 <b>현황판 카드 여섯 장이 들어가게</b> 드래그해 주세요.</p>' +
+        '<p class="caphint" id="c-hint">보통은 알아서 찾습니다. 자리를 못 찾았을 때만 위 그림에서 <b>현황판 카드가 들어가게</b> 드래그해 주세요.</p>' +
         '<div class="two"><label class="field"><span>가로 칸</span><input id="c-cols" inputmode="numeric"></label>' +
         '<label class="field"><span>세로 칸</span><input id="c-rows" inputmode="numeric"></label></div>' +
         '<div class="blist" id="c-map"></div>' +
@@ -1291,6 +1394,7 @@
         '<div class="actions">' +
           '<button class="btn" id="c-share" type="button">게임 창 공유</button>' +
           '<button class="btn" id="c-read" type="button">지금 읽기</button>' +
+          '<button class="btn" id="c-stop" type="button">중지</button>' +
           '<button class="btn" id="c-close" type="button">닫기</button></div>' +
       '</div>';
     document.body.appendChild(scrim);
@@ -1430,11 +1534,17 @@
       stat.textContent = '읽는 중…';
       capRead(function (m) { stat.textContent = m; }).then(function (hits) {
         if (!hits.length) { stat.textContent = '현황판을 찾지 못했습니다. 영역과 칸 수를 확인해 주세요.'; return; }
+        var sels = mapEl.querySelectorAll('select');
+        for (var si = 0; si < sels.length; si++) sels[si].value = cap.map[si] || '';
         var lines = hits.map(function (h) { return h.name + ' ' + fmtLong(h.sec * 1000) + (h.exact ? '' : '±1분'); });
         var r = capApply(hits);
         stat.textContent = '읽음: ' + lines.join(' · ') +
           (r.changed.length ? ' → 맞춤: ' + r.changed.join(', ') : (r.held ? ' (확인 중 — 자동을 켜 두면 알아서 맞춥니다)' : ' (이미 맞음)'));
       }).catch(function (e) { stat.textContent = e.message; });
+    });
+    scrim.querySelector('#c-stop').addEventListener('click', function () {
+      capStop();
+      stat.textContent = '캡쳐를 중지했습니다.';
     });
     scrim.querySelector('#c-close').addEventListener('click', function () {
       if (shotTimer) clearInterval(shotTimer);
@@ -1456,7 +1566,11 @@
   var capLabel = document.getElementById('capLabel');
   if (capBtn && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
     capBtn.hidden = false;
-    capBtn.addEventListener('click', function () { if (scrim) closeSheet(); openCapture(); });
+    capBtn.addEventListener('click', function () {
+      if (scrim) closeSheet();
+      if (capOn()) { openCapture(); return; }   // 이미 돌고 있으면 설정을 연다
+      capQuick();                               // 처음이면 공유부터 끝까지 알아서
+    });
   }
   capLoad();
   paintCap();
@@ -1505,6 +1619,7 @@
   paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
   setInterval(tick, 1000);
+  setInterval(function () { if (cap.flash && Date.now() - cap.flash.t > 9000) { cap.flash = null; paintCap(); } }, 1000);
   checkUpdate();
   setInterval(checkUpdate, 180000);
 })();
