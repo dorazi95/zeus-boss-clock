@@ -215,6 +215,19 @@
   .blist .lv { font-family: var(--font-mono); font-size: 11px; color: var(--dim); min-width: 22px; }
   .optline { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); padding: 8px 6px; border-radius: 8px; background: var(--panel-2); cursor: pointer; }
   .optline input { width: 15px; height: 15px; accent-color: var(--accent-solid); cursor: pointer; }
+  .cap-sheet { max-width: 460px; }
+  .capshot { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-height: 90px; display: grid; place-items: center; }
+  .capshot canvas { display: block; width: 100%; cursor: crosshair; touch-action: none; }
+  .capempty { position: absolute; font-size: 12.5px; color: var(--dim); padding: 24px 12px; text-align: center; }
+  .capsel { position: absolute; border: 2px solid var(--accent-solid); background: rgba(255,255,255,.06); pointer-events: none;
+            background-image: repeating-linear-gradient(to right, var(--accent-solid) 0 1px, transparent 1px calc(100% / var(--cols, 3))),
+                              repeating-linear-gradient(to bottom, var(--accent-solid) 0 1px, transparent 1px calc(100% / var(--rows, 2))); }
+  .caphint { font-size: 12px; color: var(--dim); margin: 0; line-height: 1.6; }
+  .cap-sheet .two .field { gap: 4px; }
+  .cap-sheet .two .field span { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+  .cap-sheet .blist label { gap: 10px; }
+  .cap-sheet .blist select { flex: 1 1 auto; font-family: var(--font-kr); font-size: 13px; background: var(--bg); color: var(--text);
+                             border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
   .sheet { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 13px; box-shadow: var(--shadow); max-height: calc(100vh - 32px); overflow-y: auto; }
   @supports (height: 100dvh) { .sheet { max-height: calc(100dvh - 32px); } }
   .sheet h2 { font-size: 16px; font-weight: 700; margin: 0; }
@@ -278,6 +291,7 @@
         </button>
         <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
         <button class="chip pip-btn" type="button" hidden>작은 창</button>
+        <button class="chip" id="capBtn" type="button" aria-pressed="false" hidden><span class="dot"></span><span id="capLabel">캡쳐</span></button>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">다크 모드</span></button>
       </header>
 
@@ -311,6 +325,7 @@
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         <b>모든 보스가 고정 시간 젠입니다.</b> 컷을 누를 일이 없고, 젠 시각이 지나면 자동으로 다음 회차로 넘어갑니다. 표 오른쪽에 보스별 젠 시각이 적혀 있습니다.<br>
         <b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다.<br>
+        <b>캡쳐</b> 버튼을 쓰면 게임 화면을 읽어 알아서 맞춥니다. 게임 창을 공유한 뒤 현황판 카드 여섯 장이 들어가게 한 번만 드래그해 두면, 그 뒤로는 현황판이 보일 때마다 자동으로 시각을 맞춥니다. 크롬·엣지 같은 PC 브라우저에서만 보이고, 처음 한 번은 글자 인식 데이터를 내려받느라 조금 걸립니다.<br>
         <b>소리 켬</b>으로 두면 출현 3분 전에 "보스명 3분 전입니다"라고 알려줍니다.
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
@@ -1017,6 +1032,434 @@
       if (state.theme === 'auto') paintTheme();
     });
   } catch (e) { /* 구형 브라우저 */ }
+
+  // ---------- 게임 화면을 읽어 젠 시각 맞추기 ----------
+  // 현황판 카드 한 장씩 잘라서 "N시간 M분 후 출현" 글자만 인식한다.
+  // 화면 전체를 통째로 인식시키면 게임 배경 때문에 거의 읽지 못한다.
+  var CAPKEY = 'zeus-boss-clock-cap-v1';
+  var cap = { stream: null, video: null, box: null, cols: 3, rows: 2, map: [],
+              auto: false, timer: null, worker: null, busy: false, win: {}, note: '' };
+
+  function capLoad() {
+    try {
+      var r = JSON.parse(localStorage.getItem(CAPKEY));
+      if (r && r.box) { cap.box = r.box; cap.cols = r.cols || 3; cap.rows = r.rows || 2; cap.map = r.map || []; }
+    } catch (e) { /* 저장 불가 환경 */ }
+  }
+  function capSave() {
+    try { localStorage.setItem(CAPKEY, JSON.stringify({ box: cap.box, cols: cap.cols, rows: cap.rows, map: cap.map })); }
+    catch (e) { /* 저장 불가 환경 */ }
+  }
+
+  function capOn() { return !!(cap.stream && cap.video); }
+  function paintCap() {
+    if (!capBtn) return;
+    var label = !capOn() ? '캡쳐' : (cap.auto ? '자동 읽는 중' : '캡쳐 켬');
+    if (capLabel.textContent !== label) capLabel.textContent = label;
+    capBtn.setAttribute('aria-pressed', capOn() ? 'true' : 'false');
+    capBtn.title = !capOn() ? '게임 화면을 읽어 젠 시각을 맞춥니다'
+      : (cap.note || (cap.auto ? '현황판이 보이면 자동으로 맞춥니다' : '캡쳐 중입니다'));
+  }
+
+  function loadScript(src) {
+    return new Promise(function (ok, no) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = ok; s.onerror = function () { no(new Error('스크립트를 받지 못했습니다')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function capStart() {
+    if (capOn()) return Promise.resolve();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      return Promise.reject(new Error('이 브라우저는 화면 캡쳐를 지원하지 않습니다'));
+    }
+    return navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false }).then(function (s) {
+      var v = document.createElement('video');
+      v.srcObject = s; v.muted = true; v.playsInline = true;
+      cap.stream = s; cap.video = v;
+      s.getVideoTracks()[0].addEventListener('ended', function () { capStop(); });
+      return v.play().then(function () {
+        return new Promise(function (ok) {
+          if (v.videoWidth) { ok(); return; }
+          v.addEventListener('loadedmetadata', function () { ok(); }, { once: true });
+        });
+      });
+    });
+  }
+  function capStop() {
+    capAuto(false);
+    if (cap.stream) { cap.stream.getTracks().forEach(function (t) { t.stop(); }); }
+    cap.stream = null; cap.video = null; cap.win = {}; cap.note = '';
+    paintCap();
+  }
+
+  function capFrame() {
+    var v = cap.video;
+    if (!v || !v.videoWidth) return null;
+    var c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function capWorker(onProgress) {
+    if (cap.worker) return Promise.resolve(cap.worker);
+    var p = (typeof Tesseract !== 'undefined') ? Promise.resolve()
+          : loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    return p.then(function () {
+      return Tesseract.createWorker(['kor', 'eng'], 1, {
+        logger: function (m) {
+          if (onProgress && m.status === 'loading language traineddata') {
+            onProgress('글자 인식 데이터 받는 중… ' + Math.round((m.progress || 0) * 100) + '%');
+          }
+        }
+      });
+    }).then(function (w) {
+      return w.setParameters({ tessedit_pageseg_mode: '7' }).then(function () { cap.worker = w; return w; });
+    });
+  }
+
+  // 잘라낸 조각을 키워서 넘긴다. 이진화는 오히려 인식률을 떨어뜨려 쓰지 않는다.
+  function capCrop(src, x, y, w, h, S, inv) {
+    var c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = Math.max(1, Math.round(w * S)); c.height = Math.max(1, Math.round(h * S));
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(src, x, y, w, h, 0, 0, c.width, c.height);
+    if (inv) {
+      var d = g.getImageData(0, 0, c.width, c.height);
+      for (var i = 0; i < d.data.length; i += 4) {
+        var v = 255 - (d.data[i] * 0.299 + d.data[i + 1] * 0.587 + d.data[i + 2] * 0.114);
+        d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+      }
+      g.putImageData(d, 0, 0);
+    }
+    return c;
+  }
+
+  // "2시간 48분 후 출현" -> 초. 게임 글꼴에서 자주 틀리는 글자를 먼저 바로잡는다.
+  function capParse(raw) {
+    var t = String(raw || '').replace(/\s+/g, '');
+    t = t.replace(/시갈|시깐|시잔|AI간|시긴/g, '시간');
+    t = t.replace(/[%岩봉보논뷴부]/g, '분');
+    t = t.replace(/[OoＯ]/g, '0').replace(/[lI|]/g, '1');
+    var h = t.match(/(\d+)시간/), m = t.match(/(\d+)분/), s = t.match(/(\d+)초/);
+    if (!h && !m && !s) return null;
+    var H = h ? +h[1] : 0, M = m ? +m[1] : 0, S = s ? +s[1] : 0;
+    if (H > 47 || M > 59 || S > 59) return null;
+    return H * 3600 + M * 60 + S;
+  }
+
+  var CAP_TRIES = [[4, false, 0], [6, false, 0], [4, true, 0], [4, false, -4], [4, false, 4]];
+
+  function capCell(box, c, r) {
+    var cw = box.w / cap.cols, ch = box.h / cap.rows;
+    return { x: box.x + c * cw, y: box.y + r * ch, w: cw, h: ch };
+  }
+  // 카드 안에서 글자가 있는 자리 (카드 높이에 대한 비율로 잡아 창 크기가 바뀌어도 따라간다)
+  function capTimeRect(cell) { return { x: cell.x + 4, y: cell.y + cell.h * 0.868 - 18, w: cell.w * 0.72, h: 36 }; }
+  function capNameRect(cell) { return { x: cell.x + 4, y: cell.y + cell.h * 0.02, w: cell.w * 0.90, h: 30 }; }
+
+  function capReadOne(worker, frame, rect, tries) {
+    var i = 0;
+    function next() {
+      if (i >= tries.length) return Promise.resolve({ sec: null, text: '' });
+      var v = tries[i++];
+      var cv = capCrop(frame, rect.x, rect.y + v[2], rect.w, rect.h, v[0], v[1]);
+      return worker.recognize(cv).then(function (res) {
+        var txt = (res.data.text || '').replace(/\s+/g, ' ').trim();
+        var sec = capParse(txt);
+        if (sec != null) return { sec: sec, text: txt };
+        return next();
+      });
+    }
+    return next();
+  }
+
+  function capAbsBox(frame) {
+    var b = cap.box;
+    return { x: b.x * frame.width, y: b.y * frame.height, w: b.w * frame.width, h: b.h * frame.height };
+  }
+
+  // 화면을 한 번 읽어 [{칸 번호, 보스, 남은 초}] 를 돌려준다
+  function capRead(onProgress) {
+    var frame = capFrame(), at = Date.now();
+    if (!frame) return Promise.reject(new Error('캡쳐 화면이 없습니다'));
+    if (!cap.box) return Promise.reject(new Error('현황판 영역을 먼저 지정해 주세요'));
+    return capWorker(onProgress).then(function (worker) {
+      var box = capAbsBox(frame), jobs = [], n = cap.cols * cap.rows;
+      for (var i = 0; i < n; i++) jobs.push(i);
+      var hits = [], k = 0;
+      function step() {
+        if (k >= jobs.length) return Promise.resolve(hits);
+        var i = jobs[k++];
+        var name = cap.map[i];
+        if (!name) return step();
+        var cell = capCell(box, i % cap.cols, Math.floor(i / cap.cols));
+        return capReadOne(worker, frame, capTimeRect(cell), CAP_TRIES).then(function (r) {
+          if (r.sec != null) hits.push({ i: i, name: name, sec: r.sec, text: r.text, exact: /초/.test(r.text), at: at });
+          return step();
+        });
+      }
+      return step();
+    });
+  }
+
+  function bossNamed(n) {
+    for (var i = 0; i < state.bosses.length; i++) if (state.bosses[i].n === n) return state.bosses[i];
+    return null;
+  }
+
+  // 게임은 1시간이 넘으면 "2시간 48분"처럼 초를 빼고 보여준다. 그래서 한 번 읽은 값만으로는
+  // 젠 시각이 최대 1분까지 불확실하다. 읽을 때마다 가능한 범위를 겹쳐 좁히고,
+  // 충분히 좁아졌을 때만 반영한다. 한 번 잘못 읽은 값도 이 과정에서 걸러진다.
+  function capApply(hits) {
+    var now = (hits.length && hits[0].at) || Date.now(), changed = [], held = 0;
+    hits.forEach(function (h) {
+      var b = bossNamed(h.name);
+      if (!b || !b.times) return;
+      var t = spawnOf(b, new Date(now));
+      if (!t) return;
+      var q = h.exact ? 1500 : 60000;                 // 초까지 보이면 1.5초, 분까지면 60초
+      var lo = now + h.sec * 1000, hi = lo + q;
+      var w = cap.win[h.name];
+      // 보스가 한 번 젠되어 다음 회차로 넘어갔으면 쌓아둔 범위를 버린다
+      if (w && (Math.abs(w.ref - t.getTime()) > 300000 || w.hi <= lo || w.lo >= hi)) w = null;
+      if (w) { w.lo = Math.max(w.lo, lo); w.hi = Math.min(w.hi, hi); w.ref = t.getTime(); }
+      else w = cap.win[h.name] = { lo: lo, hi: hi, ref: t.getTime(), n: 0 };
+      w.n++;
+      // 범위가 좁아지고 두 번 이상 같은 값이 나와야 반영한다 (한 번의 오인식을 거른다)
+      if (w.n < 2 || w.hi - w.lo > 4000) { held++; return; }
+      var d = Math.round(((w.lo + w.hi) / 2 - t.getTime()) / 1000);
+      delete cap.win[h.name];
+      if (d === 0) return;
+      if (Math.abs(d) > 600) return;                  // 10분 넘게 벌어지면 오인식으로 보고 버린다
+      b.times = b.times.map(function (x) { return shiftTime(x, d); });
+      pushTimes(b);
+      var row = cache[b.n];
+      if (row && row._when) row._when.textContent = whenText(b);
+      changed.push(b.n + ' ' + (d > 0 ? '+' : '') + d + '초');
+    });
+    if (changed.length) { save(); warned = {}; lastOrder = ''; lastStrip = ''; tick(); }
+    return { changed: changed, held: held };
+  }
+
+  function capAuto(on) {
+    cap.auto = !!on && capOn();
+    if (cap.timer) { clearInterval(cap.timer); cap.timer = null; }
+    if (cap.auto) {
+      cap.timer = setInterval(capTick, 13000);
+      capTick();
+    }
+    paintCap();
+  }
+  function capTick() {
+    if (cap.busy || !capOn()) return;
+    cap.busy = true;
+    capRead(null).then(function (hits) {
+      if (!hits.length) { cap.note = '현황판이 안 보입니다'; cap.win = {}; return; }
+      var r = capApply(hits);
+      cap.note = r.changed.length ? ('맞춤: ' + r.changed.join(', '))
+                                  : (r.held ? '범위 좁히는 중 (' + hits.length + '종 읽음)' : '이미 맞음 (' + hits.length + '종 읽음)');
+    }).catch(function (e) {
+      cap.note = e.message;
+    }).then(function () {
+      cap.busy = false;
+      paintCap();
+      if (capStatus) capStatus.textContent = cap.note;
+    });
+  }
+
+  // ---------- 캡쳐 설정 창 ----------
+  var capStatus = null;
+
+  function openCapture() {
+    scrim = document.createElement('div');
+    scrim.className = 'scrim';
+    scrim.innerHTML =
+      '<div class="sheet cap-sheet" role="dialog" aria-modal="true" aria-label="게임 화면으로 시각 맞추기">' +
+        '<h2>게임 화면으로 시각 맞추기</h2>' +
+        '<p class="sub">게임 창을 공유하면 현황판의 남은 시간을 읽어 젠 시각을 맞춥니다.</p>' +
+        '<div class="capshot"><canvas id="c-cv"></canvas><div class="capsel" id="c-sel" hidden></div>' +
+          '<div class="capempty" id="c-empty">아래 <b>게임 창 공유</b>를 눌러 주세요</div></div>' +
+        '<p class="caphint" id="c-hint">공유를 시작한 뒤, 위 그림에서 <b>현황판 카드 여섯 장이 들어가게</b> 드래그해 주세요.</p>' +
+        '<div class="two"><label class="field"><span>가로 칸</span><input id="c-cols" inputmode="numeric"></label>' +
+        '<label class="field"><span>세로 칸</span><input id="c-rows" inputmode="numeric"></label></div>' +
+        '<div class="blist" id="c-map"></div>' +
+        '<label class="optline"><input type="checkbox" id="c-auto"> 현황판이 보이면 <b>자동</b>으로 맞추기 (13초마다)</label>' +
+        '<p class="preview" id="c-stat"></p>' +
+        '<div class="actions">' +
+          '<button class="btn" id="c-share" type="button">게임 창 공유</button>' +
+          '<button class="btn" id="c-read" type="button">지금 읽기</button>' +
+          '<button class="btn" id="c-close" type="button">닫기</button></div>' +
+      '</div>';
+    document.body.appendChild(scrim);
+
+    var cv = scrim.querySelector('#c-cv'), sel = scrim.querySelector('#c-sel');
+    var empty = scrim.querySelector('#c-empty'), stat = scrim.querySelector('#c-stat');
+    var colsEl = scrim.querySelector('#c-cols'), rowsEl = scrim.querySelector('#c-rows');
+    var mapEl = scrim.querySelector('#c-map'), autoEl = scrim.querySelector('#c-auto');
+    capStatus = stat;
+    colsEl.value = cap.cols; rowsEl.value = cap.rows; autoEl.checked = cap.auto;
+
+    var shotTimer = null;
+    function drawShot() {
+      var f = capFrame();
+      if (!f) return;
+      empty.hidden = true;
+      var w = cv.parentNode.clientWidth || 380;
+      cv.width = w; cv.height = Math.round(w * f.height / f.width);
+      cv.getContext('2d').drawImage(f, 0, 0, cv.width, cv.height);
+      drawSel();
+    }
+    function drawSel() {
+      if (!cap.box) { sel.hidden = true; return; }
+      sel.hidden = false;
+      sel.style.left = (cap.box.x * cv.width) + 'px';
+      sel.style.top = (cap.box.y * cv.height) + 'px';
+      sel.style.width = (cap.box.w * cv.width) + 'px';
+      sel.style.height = (cap.box.h * cv.height) + 'px';
+      sel.style.setProperty('--cols', cap.cols);
+      sel.style.setProperty('--rows', cap.rows);
+    }
+
+    var drag = null;
+    cv.addEventListener('pointerdown', function (e) {
+      if (!capOn()) return;
+      var r = cv.getBoundingClientRect();
+      drag = { x: e.clientX - r.left, y: e.clientY - r.top };
+      cv.setPointerCapture(e.pointerId);
+    });
+    cv.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var r = cv.getBoundingClientRect();
+      var x2 = e.clientX - r.left, y2 = e.clientY - r.top;
+      cap.box = { x: Math.min(drag.x, x2) / cv.width, y: Math.min(drag.y, y2) / cv.height,
+                  w: Math.abs(x2 - drag.x) / cv.width, h: Math.abs(y2 - drag.y) / cv.height };
+      drawSel();
+    });
+    cv.addEventListener('pointerup', function () {
+      drag = null;
+      if (cap.box && (cap.box.w < 0.03 || cap.box.h < 0.03)) { cap.box = null; drawSel(); return; }
+      capSave(); buildMap(); guessNames();
+    });
+
+    function buildMap() {
+      mapEl.textContent = '';
+      var n = cap.cols * cap.rows;
+      for (var i = 0; i < n; i++) {
+        (function (i) {
+          var lab = document.createElement('label');
+          var num = document.createElement('span');
+          num.className = 'lv'; num.textContent = (i + 1);
+          var sb = document.createElement('select');
+          sb.innerHTML = '<option value="">사용 안 함</option>';
+          state.bosses.forEach(function (b) {
+            if (!b.times) return;
+            var o = document.createElement('option');
+            o.value = b.n; o.textContent = b.n;
+            sb.appendChild(o);
+          });
+          sb.value = cap.map[i] || '';
+          sb.addEventListener('change', function () { cap.map[i] = sb.value; capSave(); });
+          lab.appendChild(num); lab.appendChild(sb);
+          mapEl.appendChild(lab);
+        })(i);
+      }
+    }
+    // 카드 제목을 읽어 보스를 미리 골라 둔다. 틀리면 사용자가 고르면 된다.
+    function guessNames() {
+      var frame = capFrame();
+      if (!frame || !cap.box) return;
+      stat.textContent = '카드 이름 읽는 중…';
+      capWorker(function (m) { stat.textContent = m; }).then(function (worker) {
+        var box = capAbsBox(frame), i = 0, n = cap.cols * cap.rows;
+        function step() {
+          if (i >= n) { stat.textContent = '카드를 확인하고 틀린 것만 고쳐 주세요.'; return Promise.resolve(); }
+          var k = i++;
+          var cell = capCell(box, k % cap.cols, Math.floor(k / cap.cols));
+          var rect = capNameRect(cell);
+          return worker.recognize(capCrop(frame, rect.x, rect.y, rect.w, rect.h, 4, false)).then(function (res) {
+            var txt = (res.data.text || '');
+            var best = '', score = 0;
+            state.bosses.forEach(function (b) {
+              if (!b.times) return;
+              var s = nameScore(b.n, txt);
+              if (s > score) { score = s; best = b.n; }
+            });
+            if (score >= 0.5) {
+              cap.map[k] = best;
+              var sb = mapEl.querySelectorAll('select')[k];
+              if (sb) sb.value = best;
+              capSave();
+            }
+            return step();
+          });
+        }
+        return step();
+      }).catch(function (e) { stat.textContent = e.message; });
+    }
+    function nameScore(name, txt) {
+      var a = name.replace(/\s/g, ''), b = String(txt).replace(/\s/g, ''), hit = 0, p = 0;
+      for (var i = 0; i < a.length; i++) {
+        var j = b.indexOf(a[i], p);
+        if (j >= 0) { hit++; p = j + 1; }
+      }
+      return hit / a.length;
+    }
+
+    colsEl.addEventListener('input', function () { var v = parseInt(colsEl.value, 10); if (v > 0 && v < 9) { cap.cols = v; capSave(); drawSel(); buildMap(); } });
+    rowsEl.addEventListener('input', function () { var v = parseInt(rowsEl.value, 10); if (v > 0 && v < 9) { cap.rows = v; capSave(); drawSel(); buildMap(); } });
+    autoEl.addEventListener('change', function () {
+      if (autoEl.checked && !capOn()) { autoEl.checked = false; stat.textContent = '먼저 게임 창을 공유해 주세요.'; return; }
+      capAuto(autoEl.checked);
+    });
+
+    scrim.querySelector('#c-share').addEventListener('click', function () {
+      stat.textContent = '공유할 창을 고르는 중…';
+      capStart().then(function () {
+        stat.textContent = '공유 중입니다. 현황판이 보이게 한 뒤 영역을 드래그해 주세요.';
+        paintCap();
+        drawShot();
+        if (shotTimer) clearInterval(shotTimer);
+        shotTimer = setInterval(drawShot, 1000);
+      }).catch(function (e) { stat.textContent = e.message || '공유를 시작하지 못했습니다.'; });
+    });
+    scrim.querySelector('#c-read').addEventListener('click', function () {
+      if (!capOn()) { stat.textContent = '먼저 게임 창을 공유해 주세요.'; return; }
+      stat.textContent = '읽는 중…';
+      capRead(function (m) { stat.textContent = m; }).then(function (hits) {
+        if (!hits.length) { stat.textContent = '현황판을 찾지 못했습니다. 영역과 칸 수를 확인해 주세요.'; return; }
+        var lines = hits.map(function (h) { return h.name + ' ' + fmtLong(h.sec * 1000) + (h.exact ? '' : '±1분'); });
+        var r = capApply(hits);
+        stat.textContent = '읽음: ' + lines.join(' · ') +
+          (r.changed.length ? ' → 맞춤: ' + r.changed.join(', ') : (r.held ? ' (확인 중 — 자동을 켜 두면 알아서 맞춥니다)' : ' (이미 맞음)'));
+      }).catch(function (e) { stat.textContent = e.message; });
+    });
+    scrim.querySelector('#c-close').addEventListener('click', function () {
+      if (shotTimer) clearInterval(shotTimer);
+      capStatus = null;
+      closeSheet();
+    });
+    scrim.addEventListener('click', function (e) {
+      if (e.target !== scrim) return;
+      if (shotTimer) clearInterval(shotTimer);
+      capStatus = null;
+      closeSheet();
+    });
+
+    buildMap();
+    if (capOn()) { drawShot(); shotTimer = setInterval(drawShot, 1000); stat.textContent = cap.note || '공유 중입니다.'; }
+  }
+
+  var capBtn = document.getElementById('capBtn');
+  var capLabel = document.getElementById('capLabel');
+  if (capBtn && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+    capBtn.hidden = false;
+    capBtn.addEventListener('click', function () { if (scrim) closeSheet(); openCapture(); });
+  }
+  capLoad();
+  paintCap();
 
   // ---------- 작은 창 (문서 PiP) ----------
   // 크롬 창은 폭 500px 아래로 줄일 수 없다. PiP 창은 그 제한이 없고 항상 위에 뜬다.
