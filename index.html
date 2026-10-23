@@ -357,12 +357,12 @@
     { n: '함락의 스코톨라스마', lv: 40, loc: '테살리아',        type: 'weekly', wds: [4, 1], hour: 21 },
     // 아래는 모두 고정 시간 젠 — 컷을 칠 일이 없다
     { n: '심연의 틈',        lv: 0,  loc: '테살리아',          type: 'daily', times: ['00:00', '12:00', '18:00'], lead: false },
-    { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'daily', times: ['00:29:43', '08:29:43', '16:29:43'] },
-    { n: '고트시스',         lv: 60, loc: '황금리라 부락',     type: 'daily', times: ['00:33:43', '08:33:43', '16:33:43'] },
-    { n: '키니 러우리',      lv: 45, loc: '금지된 숲',         type: 'daily', times: ['00:38:00', '12:39:43'] },
-    { n: '봉인된 아모르포스', lv: 40, loc: '유폐의 둥지',      type: 'daily', times: ['00:43:49', '08:43:49', '16:43:49'] },
-    { n: '봉인된 브델레스',   lv: 45, loc: '배신의 심연굴',    type: 'daily', times: ['12:40:43'] },
-    { n: '거인의 세번째 손', lv: 70, loc: '유적지 폐허',       type: 'daily', times: ['00:40:46', '12:42:00'], on: false }
+    { n: '크리소파고스',     lv: 35, loc: '테살리아 평원',     type: 'daily', times: ['07:36:07', '15:36:07', '23:36:07'] },
+    { n: '키니 러우리',      lv: 45, loc: '금지된 숲',         type: 'daily', times: ['01:51:20', '13:51:20'] },
+    { n: '봉인된 아모르포스', lv: 40, loc: '유폐의 둥지',      type: 'daily', times: ['00:54:07', '08:54:07', '16:54:07'] },
+    { n: '봉인된 브델레스',   lv: 45, loc: '배신의 심연굴',    type: 'daily', times: ['10:47:07'] },
+    { n: '알라스토르',       lv: 55, loc: '무법자의 길목',     type: 'daily', times: ['07:44:07', '15:44:07', '23:44:07'] },
+    { n: '트리포크',         lv: 65, loc: '가시 덤불 지대',    type: 'daily', times: ['11:05:07', '23:05:07'] },
   ];
   var SEED_TIMES = {};
   SEED.forEach(function (b) { if (b.times) SEED_TIMES[b.n] = b.times.slice(); });
@@ -1046,14 +1046,23 @@
   var cap = { stream: null, video: null, box: null, cols: 3, rows: 2, map: [],
               worker: null, busy: false, note: '' };
 
+  // 보스 목록이 바뀌면 칸별 보스 지정은 무효로 돌린다.
+  // 게임 즐겨찾기가 바뀌었는데 옛 지정을 그대로 쓰면 엉뚱한 보스 시각이 바뀐다.
+  function capSig() {
+    return (state.bosses || []).filter(function (b) { return b.times; })
+           .map(function (b) { return b.n; }).join(',');
+  }
   function capLoad() {
     try {
       var r = JSON.parse(localStorage.getItem(CAPKEY));
-      if (r && r.box) { cap.box = r.box; cap.cols = r.cols || 3; cap.rows = r.rows || 2; cap.map = r.map || []; }
+      if (r && r.box) {
+        cap.box = r.box; cap.cols = r.cols || 3; cap.rows = r.rows || 2;
+        cap.map = (r.sig === capSig()) ? (r.map || []) : [];
+      }
     } catch (e) { /* 저장 불가 환경 */ }
   }
   function capSave() {
-    try { localStorage.setItem(CAPKEY, JSON.stringify({ box: cap.box, cols: cap.cols, rows: cap.rows, map: cap.map })); }
+    try { localStorage.setItem(CAPKEY, JSON.stringify({ box: cap.box, cols: cap.cols, rows: cap.rows, map: cap.map, sig: capSig() })); }
     catch (e) { /* 저장 불가 환경 */ }
   }
 
@@ -1592,7 +1601,6 @@
       capQuick();   // 공유 → 현황판 찾기 → 한 번 읽어 반영 → 공유 끊기
     });
   }
-  capLoad();
   paintCap();
 
   // ---------- 작은 창 (문서 PiP) ----------
@@ -1635,6 +1643,7 @@
   });
 
   load();
+  capLoad();
   leadOpt.checked = state.leadAll;   // 저장된 설정을 읽은 뒤에 반영
   paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
