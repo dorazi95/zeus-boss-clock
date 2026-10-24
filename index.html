@@ -227,6 +227,7 @@
   .caprep th { text-align: left; font-weight: 500; color: var(--dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding-bottom: 6px; }
   .caprep td { padding: 6px 8px 6px 0; border-top: 1px solid var(--line); color: var(--muted); vertical-align: top; }
   .caprep td:first-child { color: var(--dim); font-family: var(--font-mono); width: 22px; }
+  .caprep select { font-family: var(--font-kr); font-size: 12px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px; max-width: 120px; }
   .caprep td.good { color: var(--accent); font-weight: 700; }
   .caprep .q { color: var(--dim); }
   .cap-sheet .two .field { gap: 4px; }
@@ -1279,21 +1280,33 @@
   // 처음이면 읽어낸 남은 시간이 지금 시간표의 어느 보스와 가장 가까운지로 알아서 짝짓는다.
   function capResolve(hits) {
     var now = hits.length ? hits[0].at : Date.now();
+    // 저장해 둔 칸 지정이라도 읽은 값과 크게 다르면 틀린 것으로 보고 버린다.
+    // 게임 즐겨찾기가 바뀌면 칸과 보스가 어긋나기 때문이다.
+    hits.forEach(function (h) {
+      var n = cap.map[h.i];
+      if (!n) return;
+      var b = bossNamed(n);
+      var t = (b && b.times) ? spawnOf(b, new Date(now)) : null;
+      if (t && Math.abs(t.getTime() - (now + h.sec * 1000)) <= 600000) h.name = n;
+      else cap.map[h.i] = '';
+    });
     var pairs = [];
     hits.forEach(function (h) {
-      if (cap.map[h.i]) { h.name = cap.map[h.i]; return; }
-      var want = now + h.sec * 1000;
+      if (h.name) return;
+      var want = now + h.sec * 1000, near = null, nd = Infinity;
       state.bosses.forEach(function (b) {
         if (!b.times) return;
         var t = spawnOf(b, new Date(now));
         if (!t) return;
         var d = Math.abs(t.getTime() - want);
+        if (d < nd) { nd = d; near = b.n; }
         if (d <= 600000) pairs.push({ h: h, b: b, d: d });
       });
+      h.near = near; h.nearGap = nd;      // 못 짝지었을 때 왜 그런지 보여주기 위해
     });
     pairs.sort(function (x, y) { return x.d - y.d; });
     var usedCell = {}, usedBoss = {};
-    Object.keys(cap.map).forEach(function (k) { if (cap.map[k]) usedBoss[cap.map[k]] = 1; });
+    hits.forEach(function (h) { if (h.name) usedBoss[h.name] = 1; });
     pairs.forEach(function (p) {
       if (p.h.name || usedCell[p.h.i] || usedBoss[p.b.n]) return;
       p.h.name = p.b.n; usedCell[p.h.i] = 1; usedBoss[p.b.n] = 1;
@@ -1301,6 +1314,29 @@
     });
     capSave();
     return hits;
+  }
+
+  // 결과 창에서 사용자가 직접 고른 보스로 밀어넣는다. 시간표가 통째로 어긋났을 때 쓰는 길이다.
+  function capForce(hits) {
+    var now = hits.length ? hits[0].at : Date.now(), changed = [];
+    hits.forEach(function (h) {
+      if (!h.pick) return;
+      var b = bossNamed(h.pick);
+      if (!b || !b.times) return;
+      var t = spawnOf(b, new Date(now));
+      if (!t) return;
+      var q = h.exact ? 1500 : 60000;
+      var d = Math.round(((now + h.sec * 1000 + q / 2) - t.getTime()) / 1000);
+      if (d === 0) return;
+      b.times = b.times.map(function (x) { return shiftTime(x, d); });
+      pushTimes(b);
+      cap.map[h.i] = b.n;
+      var row = cache[b.n];
+      if (row && row._when) row._when.textContent = whenText(b);
+      changed.push(b.n + ' ' + (d > 0 ? '+' : '') + d + '초');
+    });
+    if (changed.length) { capSave(); save(); warned = {}; lastOrder = ''; lastStrip = ''; tick(); }
+    return changed;
   }
 
   function capSay(s) {
@@ -1328,28 +1364,56 @@
   }
 
   // 무엇을 읽고 왜 그렇게 했는지 그대로 보여준다. 안 바뀌었을 때 이유를 알 수 있어야 한다.
+  // 무엇을 읽고 왜 그렇게 했는지 그대로 보여주고, 틀렸으면 그 자리에서 고칠 수 있게 한다
   function capReport(hits, msg) {
     if (scrim) closeSheet();
+    var opts = state.bosses.filter(function (b) { return b.times; });
+    var none = hits.length && !hits.some(function (h) { return h.name; });
     var rows = hits.map(function (h) {
-      var cur = h.cur ? ' · 시계 ' + fmtLong(h.cur - h.at) : '';
-      return '<tr><td>' + (h.i + 1) + '</td><td>' + (h.name || '—') + '</td>' +
-             '<td>' + fmtLong(h.sec * 1000) + (h.exact ? '' : ' <span class="q">±1분</span>') + cur + '</td>' +
-             '<td class="' + (/맞춤/.test(h.why || '') ? 'good' : '') + '">' + (h.why || '—') + '</td></tr>';
+      var sel = '<select data-i="' + h.i + '"><option value="">—</option>' +
+        opts.map(function (b) {
+          return '<option value="' + b.n + '"' + (b.n === h.name ? ' selected' : '') + '>' + b.n + '</option>';
+        }).join('') + '</select>';
+      var why = h.why || '—';
+      if (/모름/.test(why) && h.near) why += ' · 가장 가까운 ' + h.near + '와 ' + fmtLong(h.nearGap) + ' 차이';
+      var mine = h.cur ? fmtLong(h.cur - h.at) : '—';
+      return '<tr><td>' + (h.i + 1) + '</td><td>' + sel + '</td>' +
+             '<td>' + fmtLong(h.sec * 1000) + (h.exact ? '' : ' <span class="q">±1분</span>') + '</td>' +
+             '<td>' + mine + '</td>' +
+             '<td class="' + (/맞춤/.test(h.why || '') ? 'good' : '') + '">' + why + '</td></tr>';
     }).join('');
+    var head = msg || (none
+      ? '읽기는 됐지만 지금 시간표와 10분 넘게 달라서 어느 보스인지 짝지을 수 없습니다. 게임이 젠 시각을 바꿨을 때 그렇습니다. 아래에서 칸마다 보스를 고르고 <b>고른 대로 적용</b>을 누르면 그대로 넣습니다.'
+      : hits.length + '칸을 읽었습니다. 1시간 넘게 남은 보스는 게임이 초를 안 보여주므로, 지금 값이 그 범위 안이면 그대로 둡니다.');
     scrim = document.createElement('div');
     scrim.className = 'scrim';
     scrim.innerHTML =
-      '<div class="sheet" role="dialog" aria-modal="true" aria-label="캡쳐 결과">' +
+      '<div class="sheet cap-sheet" role="dialog" aria-modal="true" aria-label="캡쳐 결과">' +
         '<h2>캡쳐 결과</h2>' +
-        '<p class="sub">' + (msg || (hits.length + '칸을 읽었습니다. 게임이 1시간 넘게 남은 보스는 초를 안 보여주므로, 지금 값이 그 범위 안이면 그대로 둡니다.')) + '</p>' +
-        (rows ? '<table class="caprep"><tr><th>칸</th><th>보스</th><th>게임에 보인 값</th><th>결과</th></tr>' + rows + '</table>' : '') +
-        '<div class="actions"><button class="btn" id="r-set" type="button">설정</button>' +
-        '<button class="btn primary" id="r-close" type="button">닫기</button></div>' +
+        '<p class="sub">' + head + '</p>' +
+        (rows ? '<table class="caprep"><tr><th>칸</th><th>보스</th><th>게임</th><th>내 시계</th><th>결과</th></tr>' + rows + '</table>' : '') +
+        '<p class="err" id="r-err"></p>' +
+        '<div class="actions">' +
+          (rows ? '<button class="btn" id="r-force" type="button">고른 대로 적용</button>' : '') +
+          '<button class="btn" id="r-set" type="button">설정</button>' +
+          '<button class="btn primary" id="r-close" type="button">닫기</button></div>' +
       '</div>';
     document.body.appendChild(scrim);
     scrim.querySelector('#r-close').addEventListener('click', closeSheet);
     scrim.querySelector('#r-set').addEventListener('click', function () { closeSheet(); openCapture(); });
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
+    var force = scrim.querySelector('#r-force');
+    if (force) force.addEventListener('click', function () {
+      var sels = scrim.querySelectorAll('.caprep select');
+      for (var i = 0; i < sels.length; i++) {
+        var k = +sels[i].getAttribute('data-i');
+        for (var j = 0; j < hits.length; j++) if (hits[j].i === k) hits[j].pick = sels[i].value;
+      }
+      var changed = capForce(hits);
+      if (!changed.length) { scrim.querySelector('#r-err').textContent = '바뀐 것이 없습니다. 보스를 고른 뒤 눌러 주세요.'; return; }
+      capSay('맞춤 ' + changed.join(', '));
+      closeSheet();
+    });
   }
 
   // 캡쳐 버튼: 공유 → 현황판 찾기 → 보스 짝짓기 → 한 번 읽고 반영 → 공유 끊기
