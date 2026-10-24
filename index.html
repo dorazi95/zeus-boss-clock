@@ -331,8 +331,8 @@
   <p class="foot">
         <b>창 크기에 따라 화면이 바뀝니다.</b> 창을 작게 줄이면 다음 보스 하나만, 좁고 길게 늘이면 가까운 6종이 한 줄씩, 넓히면 이 전체 화면이 나옵니다.<br>
         <b>모든 보스가 고정 시간 젠입니다.</b> 컷을 누를 일이 없고, 젠 시각이 지나면 자동으로 다음 회차로 넘어갑니다. 표 오른쪽에 보스별 젠 시각이 적혀 있습니다.<br>
-        <b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다.<br>
-        <b>캡쳐</b> 버튼을 누르고 <b>게임 창만 골라 주면</b> 현황판을 한 번 읽어 젠 시각을 맞추고 <b>바로 공유를 끊습니다.</b> 화면을 계속 들여다보지 않으니 필요할 때만 눌러 주세요. 읽고 나면 <b>결과 창</b>이 떠서, 칸마다 게임에 뭐가 보였고 왜 그렇게 했는지 알려줍니다. 게임이 1시간 넘게 남은 보스는 초를 안 보여주기 때문에, 지금 값이 게임과 어긋나지 않으면 그대로 둡니다. 크롬·엣지 같은 PC 브라우저에서만 보이고, 처음 한 번은 글자 인식 데이터를 내려받느라 20~30초 걸립니다. 자리를 못 찾으면 그때만 설정 창이 열립니다.<br>
+        <span id="editHelp"><b>✎</b> 버튼으로 젠 시각을 직접 맞출 수 있습니다. 현황판의 남은 시간을 그대로 넣거나 <b>±초</b> 버튼으로 미세 조정하면 되고, <b>기본값</b>으로 언제든 되돌립니다.<br>
+        <b>캡쳐</b> 버튼을 누르고 <b>게임 창만 골라 주면</b> 현황판을 한 번 읽어 젠 시각을 맞추고 <b>바로 공유를 끊습니다.</b> 화면을 계속 들여다보지 않으니 필요할 때만 눌러 주세요. 읽고 나면 <b>결과 창</b>이 떠서, 칸마다 게임에 뭐가 보였고 왜 그렇게 했는지 알려줍니다. 게임이 1시간 넘게 남은 보스는 초를 안 보여주기 때문에, 지금 값이 게임과 어긋나지 않으면 그대로 둡니다. 크롬·엣지 같은 PC 브라우저에서만 보이고, 처음 한 번은 글자 인식 데이터를 내려받느라 20~30초 걸립니다. 자리를 못 찾으면 그때만 설정 창이 열립니다.<br></span>
         <b>소리 켬</b>으로 두면 출현 3분 전에 "보스명 3분 전입니다"라고 알려줍니다.
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
@@ -369,6 +369,18 @@
   SEED.forEach(function (b) { if (b.times) SEED_TIMES[b.n] = b.times.slice(); });
   var WD = ['일', '월', '화', '수', '목', '금', '토'];
   var KEY = 'zeus-boss-clock-v1';
+  var EDITKEY = 'zeus-boss-clock-edit';
+  // 젠 시각을 바꾸는 버튼은 내 브라우저에서만 보인다.
+  // 주소에 ?edit=1 로 한 번 열면 그 브라우저에 기억되고, ?edit=0 으로 끈다.
+  var canEdit = false;
+  (function () {
+    var q = location.search + location.hash;
+    var m = q.match(/[?&#]edit=([^&#]*)/);
+    try {
+      if (m) { canEdit = m[1] !== '0'; localStorage.setItem(EDITKEY, canEdit ? '1' : ''); }
+      else { canEdit = localStorage.getItem(EDITKEY) === '1'; }
+    } catch (e) { canEdit = !!m && m[1] !== '0'; }
+  })();
   var STRIP_COUNT = 6;
 
   var state = { theme: 'auto', sound: false, leadAll: false, bosses: null };
@@ -552,6 +564,7 @@
   }
 
   function pushTimes(b) {
+    if (!canEdit) return;                 // 남의 브라우저에서는 서버에 쓰지 않는다
     try {
       fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -560,6 +573,7 @@
     } catch (e) { setShareState(false); }
   }
   function clearTimes(b) {
+    if (!canEdit) return;                 // 남의 브라우저에서는 서버에 쓰지 않는다
     try {
       fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', { method: 'DELETE' })
         .then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
@@ -692,7 +706,7 @@
     when.textContent = whenText(b);
     acts.appendChild(when);
     el._when = when;
-    if (b.times) acts.appendChild(makeEdit(b));
+    if (b.times && canEdit) acts.appendChild(makeEdit(b));
     el._rem = el.querySelector('.rem');
     return el;
   }
@@ -900,7 +914,7 @@
       var nm = document.createElement('span');
       nm.textContent = b.n;
       lab.appendChild(cb); lab.appendChild(lv); lab.appendChild(nm);
-      if (b.times) lab.appendChild(makeEdit(b));
+      if (b.times && canEdit) lab.appendChild(makeEdit(b));
       list.appendChild(lab);
     });
 
@@ -1658,7 +1672,7 @@
   var capBtn = document.getElementById('capBtn');
   var capLabel = document.getElementById('capLabel');
   if (capBtn && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-    capBtn.hidden = false;
+    capBtn.hidden = !canEdit;
     capBtn.addEventListener('click', function () {
       if (scrim) closeSheet();
       if (cap.busy) return;
@@ -1708,6 +1722,8 @@
 
   load();
   capLoad();
+  var editHelp = document.getElementById('editHelp');
+  if (editHelp && !canEdit) editHelp.hidden = true;
   leadOpt.checked = state.leadAll;   // 저장된 설정을 읽은 뒤에 반영
   paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
