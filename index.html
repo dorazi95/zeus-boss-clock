@@ -337,7 +337,7 @@
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
         게임을 전체화면으로 하면 탭이 절전 상태가 되어 알림이 늦을 수 있는데, <b>작은 창</b>을 띄워두면 이를 막아줍니다.<br>
-        <b>젠 시각은 아무나 못 바꿉니다.</b> 위 <b>공유 중</b> 칸을 눌러 코드를 넣은 브라우저에서만 ✎ 와 캡쳐 버튼이 나오고, 서버도 같은 코드를 확인합니다.<br> 한 사람이 맞추면 몇 초 안에 전원 화면에 반영되고, <b>기본값</b>을 누르면 모두 원래 시간표로 돌아갑니다.<br>
+        <b>젠 시각은 아무나 못 바꿉니다.</b> ✎ 나 캡쳐로 시각을 바꾸려 할 때 코드를 묻고, 서버도 같은 코드를 확인합니다. 코드가 없으면 보기만 됩니다. 위 <b>공유 중</b> 칸을 누르면 서버에서 시각을 다시 받아옵니다.<br> 한 사람이 맞추면 몇 초 안에 전원 화면에 반영되고, <b>기본값</b>을 누르면 모두 원래 시간표로 돌아갑니다.<br>
         체크박스 · 테마 · 창 모드는 각자 브라우저에만 저장됩니다.
       </p>
     </div>
@@ -582,7 +582,6 @@
   }
 
   function pushTimes(b) {
-    if (!canEdit) return;                 // 남의 브라우저에서는 서버에 쓰지 않는다
     try {
       fetch(DB + PATH + '/' + encodeURIComponent(keyOf(b.n)) + '.json', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -631,16 +630,22 @@
 
   // 공유 칩을 누르면 코드를 넣을 수 있다. 맞는 코드를 넣은 브라우저에서만
   // 젠 시각을 바꿀 수 있고, 서버도 같은 코드를 확인한다.
-  function openCode(msg) {
+  // 젠 시각을 바꾸려 할 때만 코드를 묻는다. 코드가 들어오면 하던 일을 이어서 한다.
+  function withCode(fn) {
+    if (editKey) { fn(); return; }
+    openCode('젠 시각을 바꾸려면 코드가 필요합니다.', fn);
+  }
+
+  function openCode(msg, after) {
     if (scrim) closeSheet();
     scrim = document.createElement('div');
     scrim.className = 'scrim';
     scrim.innerHTML =
       '<div class="sheet" role="dialog" aria-modal="true" aria-label="편집 코드">' +
-        '<h2>' + (canEdit ? '편집 켜짐' : '편집 코드') + '</h2>' +
-        '<p class="sub">' + (msg ? msg : canEdit
-          ? '이 브라우저에서는 젠 시각을 바꿀 수 있습니다. 끄려면 비우고 저장하세요.'
-          : '코드를 넣으면 ✎ 와 캡쳐 버튼이 나옵니다. 코드를 모르면 보기만 됩니다.') + '</p>' +
+        '<h2>' + (editKey ? '편집 코드' : '편집 코드가 필요합니다') + '</h2>' +
+        '<p class="sub">' + (msg ? msg : editKey
+          ? '이 브라우저에는 코드가 들어 있습니다. 지우려면 비우고 저장하세요.'
+          : '젠 시각을 바꾸려면 코드가 필요합니다. 코드가 없으면 보기만 됩니다.') + '</p>' +
         '<div class="field"><label for="k-in">코드</label>' +
           '<input id="k-in" inputmode="numeric" autocomplete="off"></div>' +
         '<p class="err" id="k-err">' + (msg ? '저장 거부됨' : '') + '</p>' +
@@ -652,15 +657,29 @@
     inp.value = editKey;
     function apply() {
       var v = inp.value.trim();
+      editKey = v; canEdit = !!v; badShown = false;
       try { if (v) localStorage.setItem(EDITKEY, v); else localStorage.removeItem(EDITKEY); } catch (e) { /* 무시 */ }
-      err.textContent = '바뀐 설정을 적용합니다…';
-      location.reload();
+      closeSheet();
+      if (after) after();        // 코드 때문에 멈춰 있던 일을 이어서 한다
     }
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
     scrim.querySelector('#k-ok').addEventListener('click', apply);
     scrim.querySelector('#k-cancel').addEventListener('click', closeSheet);
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
     inp.focus(); inp.select();
+  }
+
+  // 공유 칩을 누르면 서버의 젠 시각을 다시 받아온다 (바꾸는 것이 아니다)
+  function resync() {
+    shareLabel.textContent = '받는 중…';
+    fetch(DB + PATH + '.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('연결 실패')); })
+      .then(function (data) {
+        applyRemote('/', data, true);
+        setShareState(true);
+        shareOk = null; setShareState(true);
+      })
+      .catch(function () { setShareState(false); });
   }
 
   function connectShare() {
@@ -709,7 +728,7 @@
   };
   var shareChip = document.getElementById('shareChip');
   var shareLabel = document.getElementById('shareLabel');
-  shareChip.addEventListener('click', function () { openCode(); });   // 클릭 이벤트가 안내문으로 넘어가지 않게
+  shareChip.addEventListener('click', function () { resync(); });
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
   var soundBtn = document.getElementById('soundBtn');
@@ -759,7 +778,7 @@
     when.textContent = whenText(b);
     acts.appendChild(when);
     el._when = when;
-    if (b.times && canEdit) acts.appendChild(makeEdit(b));
+    if (b.times) acts.appendChild(makeEdit(b));
     el._rem = el.querySelector('.rem');
     return el;
   }
@@ -967,7 +986,7 @@
       var nm = document.createElement('span');
       nm.textContent = b.n;
       lab.appendChild(cb); lab.appendChild(lv); lab.appendChild(nm);
-      if (b.times && canEdit) lab.appendChild(makeEdit(b));
+      if (b.times) lab.appendChild(makeEdit(b));
       list.appendChild(lab);
     });
 
@@ -1077,21 +1096,21 @@
       })(nb[i]);
     }
     allEl.addEventListener('change', paint);
-    scrim.querySelector('#a-reset').addEventListener('click', function () {
+    scrim.querySelector('#a-reset').addEventListener('click', function () { withCode(function () {
       if (!SEED_TIMES[b.n]) return;
       b.times = SEED_TIMES[b.n].slice();
       clearTimes(b);
       afterAdjust(b); closeSheet();
-    });
+    }); });
     scrim.querySelector('#a-cancel').addEventListener('click', closeSheet);
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
-    scrim.querySelector('#a-ok').addEventListener('click', function () {
+    scrim.querySelector('#a-ok').addEventListener('click', function () { withCode(function () {
       var nt = applied();
       if (!nt) { errEl.textContent = '남은 시간을 읽지 못했습니다. 예: 1분 33초'; return; }
       b.times = nt;
       pushTimes(b);
       afterAdjust(b); closeSheet();
-    });
+    }); });
 
     remEl.value = hms(t - now);
     paint();
@@ -1520,7 +1539,7 @@
     scrim.querySelector('#r-set').addEventListener('click', function () { closeSheet(); openCapture(); });
     scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
     var force = scrim.querySelector('#r-force');
-    if (force) force.addEventListener('click', function () {
+    if (force) force.addEventListener('click', function () { withCode(function () {
       var sels = scrim.querySelectorAll('.caprep select');
       for (var i = 0; i < sels.length; i++) {
         var k = +sels[i].getAttribute('data-i');
@@ -1530,7 +1549,7 @@
       if (!changed.length) { scrim.querySelector('#r-err').textContent = '바뀐 것이 없습니다. 보스를 고른 뒤 눌러 주세요.'; return; }
       capSay('맞춤 ' + changed.join(', '));
       closeSheet();
-    });
+    }); });
   }
 
   // 캡쳐 버튼: 공유 → 현황판 찾기 → 보스 짝짓기 → 한 번 읽고 반영 → 공유 끊기
@@ -1776,11 +1795,11 @@
   var capBtn = document.getElementById('capBtn');
   var capLabel = document.getElementById('capLabel');
   if (capBtn && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-    capBtn.hidden = !canEdit;
+    capBtn.hidden = false;
     capBtn.addEventListener('click', function () {
       if (scrim) closeSheet();
       if (cap.busy) return;
-      capQuick();   // 공유 → 현황판 찾기 → 한 번 읽어 반영 → 공유 끊기
+      withCode(capQuick);   // 공유 → 현황판 찾기 → 한 번 읽어 반영 → 공유 끊기
     });
   }
   paintCap();
@@ -1827,7 +1846,7 @@
   load();
   capLoad();
   var editHelp = document.getElementById('editHelp');
-  if (editHelp && !canEdit) editHelp.hidden = true;
+
   leadOpt.checked = state.leadAll;   // 저장된 설정을 읽은 뒤에 반영
   paintTheme(); paintSound(); applyMode(); tick();
   connectShare();
