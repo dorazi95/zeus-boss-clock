@@ -1242,81 +1242,51 @@
   }
   // 카드 안에서 글자가 있는 자리 (카드 높이에 대한 비율로 잡아 창 크기가 바뀌어도 따라간다)
   function capTimeRect(cell) { return { x: cell.x + 4, y: cell.y + cell.h * 0.868 - 18, w: cell.w * 0.72, h: 36 }; }
-  function capNameRect(cell) { return { x: cell.x + 4, y: cell.y + cell.h * 0.02, w: cell.w * 0.90, h: 30 }; }
+  function capNameRect(cell) { return { x: cell.x + cell.w * 0.05, y: cell.y + cell.h * 0.025, w: cell.w * 0.80, h: cell.h * 0.14 }; }
 
-  function capReadOne(worker, frame, rect, tries) {
-    var i = 0;
+  // 카드 제목("Lv.35 크리소파고스")에서 보스 이름을 읽는다.
+  // 게임 즐겨찾기가 자주 바뀌므로, 이름을 읽어 두면 칸이 바뀌어도 바로 따라간다.
+  function nameScore(name, txt) {
+    var a = name.replace(/\s/g, ''), b = String(txt).replace(/\s/g, '');
+    if (!a || !b) return 0;
+    var hit = 0, p = 0;
+    for (var i = 0; i < a.length; i++) {
+      var j = b.indexOf(a[i], p);
+      if (j >= 0) { hit++; p = j + 1; }
+    }
+    return hit / a.length;
+  }
+  function matchName(txt) {
+    var t = String(txt).replace(/.*?[Ll]\s*[vV]\s*[.,]?\s*\d+/, '');   // 앞의 Lv.NN 을 떼어낸다
+    var best = null, top = 0, second = 0;
+    state.bosses.forEach(function (b) {
+      if (!b.times) return;
+      var s = Math.max(nameScore(b.n, t), nameScore(b.n, txt));
+      if (s > top) { second = top; top = s; best = b.n; }
+      else if (s > second) second = s;
+    });
+    return { name: best, score: top, margin: top - second };
+  }
+
+  // 제목은 작고 배경이 어지러워 한 번에 잘 안 읽힌다. 배율과 자리를 조금씩 달리해
+  // 여러 번 읽고 가장 잘 맞는 것을 쓴다.
+  var CAP_NAME_TRIES = [[4, false, 0], [6, false, 0], [4, true, 0], [5, false, -0.03], [5, false, 0.03], [8, false, 0]];
+  function capReadName(worker, frame, cell) {
+    var i = 0, best = { name: null, score: 0, margin: 0 }, bestTxt = '';
     function next() {
-      if (i >= tries.length) return Promise.resolve({ sec: null, text: '' });
-      var v = tries[i++];
-      var cv = capCrop(frame, rect.x, rect.y + v[2], rect.w, rect.h, v[0], v[1]);
+      if (i >= CAP_NAME_TRIES.length) return Promise.resolve({ m: best, text: bestTxt });
+      var v = CAP_NAME_TRIES[i++];
+      var r = capNameRect(cell);
+      var cv = capCrop(frame, r.x, r.y + cell.h * v[2], r.w, r.h, v[0], v[1]);
       return worker.recognize(cv).then(function (res) {
         var txt = (res.data.text || '').replace(/\s+/g, ' ').trim();
-        var sec = capParse(txt);
-        if (sec != null) return { sec: sec, text: txt };
+        var m = matchName(txt);
+        if (m.score > best.score) { best = m; bestTxt = txt; }
+        if (best.score >= 0.9) return { m: best, text: bestTxt };
         return next();
-      });
+      }, next);
     }
     return next();
-  }
-
-  function capAbsBox(frame) {
-    var b = cap.box;
-    return { x: b.x * frame.width, y: b.y * frame.height, w: b.w * frame.width, h: b.h * frame.height };
-  }
-
-  // 화면을 한 번 읽어 [{칸 번호, 보스, 남은 초}] 를 돌려준다
-  // 게임이 현황판을 창 가운데에 같은 비율로 띄우므로, 창 크기와 상관없이
-  // 이 비율이면 대개 카드 여섯 장이 들어온다. 어긋나면 아래에서 조금씩 밀어가며 찾는다.
-  var CAP_GUESS = { x: 0.2904, y: 0.2497, w: 0.5415, h: 0.3745 };
-  function capShift(b, dx, dy, s) {
-    var cx = b.x + b.w / 2, cy = b.y + b.h / 2, w = b.w * s, h = b.h * s;
-    return { x: cx - w / 2 + dx, y: cy - h / 2 + dy, w: w, h: h };
-  }
-  function capCandidates() {
-    var list = [];
-    if (cap.box) list.push(cap.box);
-    list.push(CAP_GUESS);
-    [[0, -0.025, 1], [0, 0.025, 1], [-0.025, 0, 1], [0.025, 0, 1],
-     [0, 0, 0.92], [0, 0, 1.08], [0, -0.05, 1], [0, 0.05, 1]].forEach(function (v) {
-      list.push(capShift(CAP_GUESS, v[0], v[1], v[2]));
-    });
-    return list;
-  }
-
-  function capAbsOf(box, frame) {
-    return { x: box.x * frame.width, y: box.y * frame.height, w: box.w * frame.width, h: box.h * frame.height };
-  }
-
-  // 후보 영역에서 첫 두 칸이 읽히면 맞는 자리로 본다
-  function capProbe(worker, frame, box) {
-    var abs = capAbsOf(box, frame);
-    var c0 = capCell(abs, 0, 0), c1 = capCell(abs, 1 % cap.cols, cap.cols > 1 ? 0 : 1);
-    return capReadOne(worker, frame, capTimeRect(c0), CAP_TRIES.slice(0, 2)).then(function (a) {
-      if (a.sec == null) return false;
-      return capReadOne(worker, frame, capTimeRect(c1), CAP_TRIES.slice(0, 2)).then(function (b) {
-        return b.sec != null;
-      });
-    });
-  }
-
-  function capFind(onProgress) {
-    var frame = capFrame();
-    if (!frame) return Promise.reject(new Error('캡쳐 화면이 없습니다'));
-    return capWorker(onProgress).then(function (worker) {
-      var list = capCandidates(), k = 0;
-      function step() {
-        if (k >= list.length) return Promise.resolve(false);
-        var box = list[k++];
-        if (onProgress) onProgress('현황판 찾는 중… ' + k + '/' + list.length);
-        return capProbe(worker, frame, box).then(function (ok) {
-          if (!ok) return step();
-          cap.box = box; capSave();
-          return true;
-        });
-      }
-      return step();
-    });
   }
 
   function capRead(onProgress) {
@@ -1329,9 +1299,19 @@
         if (k >= n) return Promise.resolve(hits);
         var i = k++;
         var cell = capCell(box, i % cap.cols, Math.floor(i / cap.cols));
+        if (onProgress) onProgress('읽는 중… ' + (i + 1) + '/' + n);
         return capReadOne(worker, frame, capTimeRect(cell), CAP_TRIES).then(function (r) {
-          if (r.sec != null) hits.push({ i: i, sec: r.sec, text: r.text, exact: /초/.test(r.text), at: at });
-          return step();
+          if (r.sec == null) return step();          // 빈 칸
+          var h = { i: i, sec: r.sec, text: r.text, exact: /초/.test(r.text), at: at };
+          hits.push(h);
+          // 시간이 읽힌 칸만 제목도 읽는다
+          return capReadName(worker, frame, cell).then(function (nm) {
+            h.raw = nm.text;
+            h.score = nm.m.score;
+            // 또렷하게 맞고 2등과 충분히 벌어졌을 때만 이름으로 인정한다
+            h.read = (nm.m.score >= 0.75 && nm.m.margin >= 0.25) ? nm.m.name : null;
+            return step();
+          }, function () { return step(); });
         });
       }
       return step().then(function (h) { return capResolve(h); });
@@ -1343,18 +1323,21 @@
     return null;
   }
 
-  // 칸마다 어떤 보스인지 정한다. 한 번 정해 두면 그대로 쓰고,
-  // 처음이면 읽어낸 남은 시간이 지금 시간표의 어느 보스와 가장 가까운지로 알아서 짝짓는다.
+  // 칸마다 어떤 보스인지 정한다. 읽어낸 이름이 가장 믿을 만하고,
+  // 이름을 못 읽었을 때만 남은 시간이 가까운 보스로 짝짓는다.
   function capResolve(hits) {
     var now = hits.length ? hits[0].at : Date.now();
-    // 저장해 둔 칸 지정이라도 읽은 값과 크게 다르면 틀린 것으로 보고 버린다.
-    // 게임 즐겨찾기가 바뀌면 칸과 보스가 어긋나기 때문이다.
+    var usedBoss = {};
     hits.forEach(function (h) {
+      if (h.read && !usedBoss[h.read]) { h.name = h.read; h.src = 'name'; usedBoss[h.read] = 1; }
+    });
+    // 저장해 둔 칸 지정은 읽은 값과 크게 다르지 않을 때만 믿는다
+    hits.forEach(function (h) {
+      if (h.name) return;
       var n = cap.map[h.i];
-      if (!n) return;
-      var b = bossNamed(n);
-      var t = (b && b.times) ? spawnOf(b, new Date(now)) : null;
-      if (t && Math.abs(t.getTime() - (now + h.sec * 1000)) <= 600000) h.name = n;
+      if (!n || usedBoss[n]) return;
+      var b = bossNamed(n), t = (b && b.times) ? spawnOf(b, new Date(now)) : null;
+      if (t && Math.abs(t.getTime() - (now + h.sec * 1000)) <= 600000) { h.name = n; h.src = 'saved'; usedBoss[n] = 1; }
       else cap.map[h.i] = '';
     });
     var pairs = [];
@@ -1362,23 +1345,22 @@
       if (h.name) return;
       var want = now + h.sec * 1000, near = null, nd = Infinity;
       state.bosses.forEach(function (b) {
-        if (!b.times) return;
+        if (!b.times || usedBoss[b.n]) return;
         var t = spawnOf(b, new Date(now));
         if (!t) return;
         var d = Math.abs(t.getTime() - want);
         if (d < nd) { nd = d; near = b.n; }
         if (d <= 600000) pairs.push({ h: h, b: b, d: d });
       });
-      h.near = near; h.nearGap = nd;      // 못 짝지었을 때 왜 그런지 보여주기 위해
+      h.near = near; h.nearGap = nd;
     });
     pairs.sort(function (x, y) { return x.d - y.d; });
-    var usedCell = {}, usedBoss = {};
-    hits.forEach(function (h) { if (h.name) usedBoss[h.name] = 1; });
+    var usedCell = {};
     pairs.forEach(function (p) {
       if (p.h.name || usedCell[p.h.i] || usedBoss[p.b.n]) return;
-      p.h.name = p.b.n; usedCell[p.h.i] = 1; usedBoss[p.b.n] = 1;
-      cap.map[p.h.i] = p.b.n;
+      p.h.name = p.b.n; p.h.src = 'time'; usedCell[p.h.i] = 1; usedBoss[p.b.n] = 1;
     });
+    hits.forEach(function (h) { if (h.name) cap.map[h.i] = h.name; });
     capSave();
     return hits;
   }
@@ -1441,7 +1423,8 @@
         opts.map(function (b) {
           return '<option value="' + b.n + '"' + (b.n === h.name ? ' selected' : '') + '>' + b.n + '</option>';
         }).join('') + '</select>';
-      var why = h.why || '—';
+      var how = h.src === 'name' ? ' <span class="q">이름 읽음</span>' : (h.src === 'time' ? ' <span class="q">시간으로 추정</span>' : '');
+      var why = (h.why || '—') + how;
       if (/모름/.test(why) && h.near) why += ' · 가장 가까운 ' + h.near + '와 ' + fmtLong(h.nearGap) + ' 차이';
       var mine = h.cur ? fmtLong(h.cur - h.at) : '—';
       return '<tr><td>' + (h.i + 1) + '</td><td>' + sel + '</td>' +
@@ -1529,7 +1512,8 @@
       var d = Math.round(((lo + hi) / 2 - cur) / 1000);
       h.d = d;
       if (d === 0) { h.why = '이미 맞음'; return; }
-      if (Math.abs(d) > 600) { h.why = '차이가 너무 큼 (' + Math.round(d / 60) + '분)'; return; }
+      var lim = (h.src === 'name') ? 43200 : 600;   // 이름을 읽었으면 확실하니 크게 어긋나도 고친다
+      if (Math.abs(d) > lim) { h.why = '차이가 너무 큼 (' + Math.round(d / 60) + '분)'; return; }
       b.times = b.times.map(function (x) { return shiftTime(x, d); });
       pushTimes(b);
       var row = cache[b.n];
