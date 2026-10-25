@@ -439,7 +439,7 @@
           var tag = r.headers.get('etag') || r.headers.get('last-modified');
           if (!tag) return;
           if (!myTag) { myTag = tag; return; }
-          if (tag !== myTag && !scrim) location.reload();
+          if (tag !== myTag) location.reload();   // 창이 떠 있어도 새 버전이면 받는다
         })
         .catch(function () { /* 오프라인 */ });
     } catch (e) { /* 무시 */ }
@@ -1773,6 +1773,10 @@
   setInterval(tick, 1000);
   setInterval(function () { if (cap.flash && Date.now() - cap.flash.t > 9000) { cap.flash = null; paintCap(); } }, 1000);
   checkUpdate();
-  setInterval(checkUpdate, 180000);
+  setInterval(checkUpdate, 60000);
+  // 뒤에 있던 탭은 타이머가 거의 멈추므로, 다시 보는 순간 확인한다
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) checkUpdate(); });
+  window.addEventListener('focus', checkUpdate);
+  window.addEventListener('online', checkUpdate);
 })();
 </script>
