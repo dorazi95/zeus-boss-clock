@@ -296,7 +296,7 @@
         <button class="chip" id="soundBtn" type="button" aria-pressed="false">
           <span class="dot"></span><span id="soundLabel">소리 끔</span>
         </button>
-        <span class="chip" id="shareChip" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></span>
+        <button class="chip" id="shareChip" type="button" aria-pressed="false"><span class="dot"></span><span id="shareLabel">연결 중</span></button>
         <button class="chip pip-btn" type="button" hidden>작은 창</button>
         <button class="chip" id="capBtn" type="button" aria-pressed="false" hidden><span class="dot"></span><span id="capLabel">캡쳐</span></button>
         <button class="chip" id="themeBtn" type="button"><span id="themeLabel">다크 모드</span></button>
@@ -337,7 +337,7 @@
         버튼이 <b>소리 켬 · 화면 클릭 필요</b>로 보이면 아직 소리가 막혀 있는 상태입니다 — 브라우저가 한 번도 건드리지 않은 페이지의 소리를 차단하기 때문이고,
         페이지 아무 곳이나 한 번 클릭하면 바로 풀립니다. 새로고침되면 다시 한 번 눌러줘야 합니다.
         게임을 전체화면으로 하면 탭이 절전 상태가 되어 알림이 늦을 수 있는데, <b>작은 창</b>을 띄워두면 이를 막아줍니다.<br>
-        <b>조정한 젠 시각은 이 링크를 쓰는 모두가 같이 봅니다.</b> 한 사람이 맞추면 몇 초 안에 전원 화면에 반영되고, <b>기본값</b>을 누르면 모두 원래 시간표로 돌아갑니다.<br>
+        <b>젠 시각은 아무나 못 바꿉니다.</b> 위 <b>공유 중</b> 칸을 눌러 코드를 넣은 브라우저에서만 ✎ 와 캡쳐 버튼이 나오고, 서버도 같은 코드를 확인합니다.<br> 한 사람이 맞추면 몇 초 안에 전원 화면에 반영되고, <b>기본값</b>을 누르면 모두 원래 시간표로 돌아갑니다.<br>
         체크박스 · 테마 · 창 모드는 각자 브라우저에만 저장됩니다.
       </p>
     </div>
@@ -372,15 +372,23 @@
   var EDITKEY = 'zeus-boss-clock-edit';
   // 젠 시각을 바꾸는 버튼은 내 브라우저에서만 보인다.
   // 주소에 ?edit=1 로 한 번 열면 그 브라우저에 기억되고, ?edit=0 으로 끈다.
-  var canEdit = false;
+  // 젠 시각을 바꾸려면 열쇠가 있어야 한다. 주소에 ?edit=<열쇠> 로 한 번 열면
+  // 그 브라우저에만 저장된다. 열쇠는 페이지 소스에 없고, 서버 규칙이 이 값을 확인한다.
+  var editKey = '';
   (function () {
-    var q = location.search + location.hash;
-    var m = q.match(/[?&#]edit=([^&#]*)/);
+    var m = (location.search + location.hash).match(/[?&#]edit=([^&#]*)/);
     try {
-      if (m) { canEdit = m[1] !== '0'; localStorage.setItem(EDITKEY, canEdit ? '1' : ''); }
-      else { canEdit = localStorage.getItem(EDITKEY) === '1'; }
-    } catch (e) { canEdit = !!m && m[1] !== '0'; }
+      if (m) {
+        editKey = decodeURIComponent(m[1]);
+        if (editKey === '0' || editKey === '') { editKey = ''; localStorage.removeItem(EDITKEY); }
+        else localStorage.setItem(EDITKEY, editKey);
+        if (history.replaceState) history.replaceState(null, '', location.pathname);
+      } else {
+        editKey = localStorage.getItem(EDITKEY) || '';
+      }
+    } catch (e) { editKey = m ? decodeURIComponent(m[1]) : ''; }
   })();
+  var canEdit = !!editKey;
   var STRIP_COUNT = 6;
 
   var state = { theme: 'auto', sound: false, leadAll: false, bosses: null };
@@ -543,9 +551,11 @@
   }
 
   // ---------- 공유 저장소 (조정한 젠 시각은 모두가 같은 값을 본다) ----------
-  // 규칙상 열려 있는 경로가 /cuts 라서 그대로 쓴다. 담기는 값은 젠 시간표다.
+  // 규칙상 열려 있는 경로가 /cuts 뿐이라 그 아래를 쓴다. 담기는 값은 젠 시간표다.
   var DB = 'https://zeus-boss-clock-default-rtdb.firebaseio.com';
-  var shareOk = null;
+  // 저장 위치. 옛 페이지는 /cuts 바로 아래에 쓰므로 한 칸 안쪽을 쓴다.
+  var PATH = '/cuts/v2';
+  var shareOk = null, lastEdit = 0;
 
   function keyOf(name) { return name.replace(/[.#$\[\]\/\s]/g, '_'); }
   function bossByKey(k) {
@@ -559,32 +569,30 @@
     shareOk = ok;
     shareChip.setAttribute('aria-pressed', ok ? 'true' : 'false');
     shareLabel.textContent = ok ? '공유 중' : '연결 끊김';
-    shareChip.title = ok ? '조정한 젠 시각을 친구들과 같이 씁니다'
+    var when = lastEdit ? ' · 마지막 수정 ' + new Date(lastEdit).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    shareChip.title = ok ? ('조정한 젠 시각을 친구들과 같이 씁니다' + when)
                          : '공유 서버에 연결하지 못했습니다. 조정값이 이 브라우저에만 남습니다.';
   }
 
   function pushTimes(b) {
     if (!canEdit) return;                 // 남의 브라우저에서는 서버에 쓰지 않는다
     try {
-      fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', {
+      fetch(DB + PATH + '/' + encodeURIComponent(keyOf(b.n)) + '.json', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ times: b.times, base: (SEED_TIMES[b.n] || []).join(','), t: Date.now() })
+        body: JSON.stringify({ times: b.times, base: (SEED_TIMES[b.n] || []).join(','), t: Date.now(), k: editKey })
       }).then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
     } catch (e) { setShareState(false); }
   }
-  function clearTimes(b) {
-    if (!canEdit) return;                 // 남의 브라우저에서는 서버에 쓰지 않는다
-    try {
-      fetch(DB + '/cuts/' + encodeURIComponent(keyOf(b.n)) + '.json', { method: 'DELETE' })
-        .then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
-    } catch (e) { setShareState(false); }
-  }
+  // 지우기(DELETE)는 보내는 내용이 없어 서버가 열쇠를 확인할 수 없다.
+  // 그래서 되돌릴 때도 기본 시간표를 그대로 써 넣는다.
+  function clearTimes(b) { pushTimes(b); }
 
   // 서버 값이 기본 시간표를 기준으로 조정된 것일 때만 받는다.
   // 게임 패치로 시간표가 바뀌면 base 가 달라져 옛 조정값은 저절로 버려진다.
   function takeTimes(key, v) {
     var b = bossByKey(key);
     if (!b || !b.times || !SEED_TIMES[b.n]) return false;
+    if (v && v.t > lastEdit) { lastEdit = v.t; shareOk = null; }   // 칩 설명을 다시 그리게 한다
     var want = (v && v.times && v.times.length && v.base === SEED_TIMES[b.n].join(','))
       ? v.times.slice() : SEED_TIMES[b.n].slice();
     if (b.times.join(',') === want.join(',')) return false;
@@ -611,10 +619,44 @@
     if (changed) { save(); warned = {}; lastOrder = ''; lastStrip = ''; tick(); }
   }
 
+  // 공유 칩을 누르면 코드를 넣을 수 있다. 맞는 코드를 넣은 브라우저에서만
+  // 젠 시각을 바꿀 수 있고, 서버도 같은 코드를 확인한다.
+  function openCode() {
+    if (scrim) closeSheet();
+    scrim = document.createElement('div');
+    scrim.className = 'scrim';
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="편집 코드">' +
+        '<h2>' + (canEdit ? '편집 켜짐' : '편집 코드') + '</h2>' +
+        '<p class="sub">' + (canEdit
+          ? '이 브라우저에서는 젠 시각을 바꿀 수 있습니다. 끄려면 비우고 저장하세요.'
+          : '코드를 넣으면 ✎ 와 캡쳐 버튼이 나옵니다. 코드를 모르면 보기만 됩니다.') + '</p>' +
+        '<div class="field"><label for="k-in">코드</label>' +
+          '<input id="k-in" inputmode="numeric" autocomplete="off"></div>' +
+        '<p class="err" id="k-err"></p>' +
+        '<div class="actions"><button class="btn" id="k-cancel" type="button">취소</button>' +
+        '<button class="btn primary" id="k-ok" type="button">저장</button></div>' +
+      '</div>';
+    document.body.appendChild(scrim);
+    var inp = scrim.querySelector('#k-in'), err = scrim.querySelector('#k-err');
+    inp.value = editKey;
+    function apply() {
+      var v = inp.value.trim();
+      try { if (v) localStorage.setItem(EDITKEY, v); else localStorage.removeItem(EDITKEY); } catch (e) { /* 무시 */ }
+      err.textContent = '바뀐 설정을 적용합니다…';
+      location.reload();
+    }
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+    scrim.querySelector('#k-ok').addEventListener('click', apply);
+    scrim.querySelector('#k-cancel').addEventListener('click', closeSheet);
+    scrim.addEventListener('click', function (e) { if (e.target === scrim) closeSheet(); });
+    inp.focus(); inp.select();
+  }
+
   function connectShare() {
     if (typeof EventSource === 'undefined') { setShareState(false); return; }
     var es;
-    try { es = new EventSource(DB + '/cuts.json'); } catch (e) { setShareState(false); return; }
+    try { es = new EventSource(DB + PATH + '.json'); } catch (e) { setShareState(false); return; }
     es.addEventListener('put', function (e) {
       setShareState(true);
       try { var m = JSON.parse(e.data); applyRemote(m.path, m.data, true); } catch (err) { /* 무시 */ }
@@ -657,6 +699,7 @@
   };
   var shareChip = document.getElementById('shareChip');
   var shareLabel = document.getElementById('shareLabel');
+  shareChip.addEventListener('click', openCode);
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
   var soundBtn = document.getElementById('soundBtn');
