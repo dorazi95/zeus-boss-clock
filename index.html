@@ -574,13 +574,23 @@
                          : '공유 서버에 연결하지 못했습니다. 조정값이 이 브라우저에만 남습니다.';
   }
 
+  var badShown = false;
+  function badCode() {
+    if (badShown) return;
+    badShown = true;
+    openCode('코드가 맞지 않아 저장되지 않았습니다. 그래서 값이 되돌아갑니다. 코드를 다시 넣어 주세요.');
+  }
+
   function pushTimes(b) {
     if (!canEdit) return;                 // 남의 브라우저에서는 서버에 쓰지 않는다
     try {
       fetch(DB + PATH + '/' + encodeURIComponent(keyOf(b.n)) + '.json', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ times: b.times, base: (SEED_TIMES[b.n] || []).join(','), t: Date.now(), k: editKey })
-      }).then(function (r) { setShareState(r.ok); }, function () { setShareState(false); });
+      }).then(function (r) {
+        setShareState(r.ok);
+        if (r.status === 401 || r.status === 403) badCode();   // 코드가 틀리면 서버가 거부하고 값이 되돌아간다
+      }, function () { setShareState(false); });
     } catch (e) { setShareState(false); }
   }
   // 지우기(DELETE)는 보내는 내용이 없어 서버가 열쇠를 확인할 수 없다.
@@ -621,19 +631,19 @@
 
   // 공유 칩을 누르면 코드를 넣을 수 있다. 맞는 코드를 넣은 브라우저에서만
   // 젠 시각을 바꿀 수 있고, 서버도 같은 코드를 확인한다.
-  function openCode() {
+  function openCode(msg) {
     if (scrim) closeSheet();
     scrim = document.createElement('div');
     scrim.className = 'scrim';
     scrim.innerHTML =
       '<div class="sheet" role="dialog" aria-modal="true" aria-label="편집 코드">' +
         '<h2>' + (canEdit ? '편집 켜짐' : '편집 코드') + '</h2>' +
-        '<p class="sub">' + (canEdit
+        '<p class="sub">' + (msg ? msg : canEdit
           ? '이 브라우저에서는 젠 시각을 바꿀 수 있습니다. 끄려면 비우고 저장하세요.'
           : '코드를 넣으면 ✎ 와 캡쳐 버튼이 나옵니다. 코드를 모르면 보기만 됩니다.') + '</p>' +
         '<div class="field"><label for="k-in">코드</label>' +
           '<input id="k-in" inputmode="numeric" autocomplete="off"></div>' +
-        '<p class="err" id="k-err"></p>' +
+        '<p class="err" id="k-err">' + (msg ? '저장 거부됨' : '') + '</p>' +
         '<div class="actions"><button class="btn" id="k-cancel" type="button">취소</button>' +
         '<button class="btn primary" id="k-ok" type="button">저장</button></div>' +
       '</div>';
@@ -699,7 +709,7 @@
   };
   var shareChip = document.getElementById('shareChip');
   var shareLabel = document.getElementById('shareLabel');
-  shareChip.addEventListener('click', openCode);
+  shareChip.addEventListener('click', function () { openCode(); });   // 클릭 이벤트가 안내문으로 넘어가지 않게
   var themeBtn = document.getElementById('themeBtn');
   var themeLabel = document.getElementById('themeLabel');
   var soundBtn = document.getElementById('soundBtn');
