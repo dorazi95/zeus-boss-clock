@@ -1246,6 +1246,9 @@
     t = t.replace(/시갈|시깐|시잔|AI간|시긴/g, '시간');
     t = t.replace(/[%岩봉보논뷴부]/g, '분');
     t = t.replace(/[OoＯ]/g, '0').replace(/[lI|]/g, '1');
+    // '간' 은 보이는데 '숫자+시간' 이 아니면 앞자리가 잘린 것이다 (게임은 '0시간' 이라고 쓰지 않는다)
+    if (/간/.test(t) && !/\d+시간/.test(t)) return null;
+    if (/분/.test(t) && !/\d+분/.test(t)) return null;
     var h = t.match(/(\d+)시간/), m = t.match(/(\d+)분/), s = t.match(/(\d+)초/);
     if (!h && !m && !s) return null;
     var H = h ? +h[1] : 0, M = m ? +m[1] : 0, S = s ? +s[1] : 0;
@@ -1253,33 +1256,52 @@
     return H * 3600 + M * 60 + S;
   }
 
-  var CAP_TRIES = [[4, false, 0], [6, false, 0], [4, true, 0], [4, false, -4], [4, false, 4]];
+  // 자리가 조금만 오른쪽으로 밀려도 "14시간"의 앞자리 1이 잘려 "4시간"으로 읽힌다.
+  // 그래서 왼쪽으로 조금씩 밀어본 것까지 모두 읽고, 가장 많이 나온 값을 쓴다.
+  // 같은 횟수면 숫자가 더 많이 잡힌 쪽(= 앞자리가 살아 있는 쪽)을 고른다.
+  var CAP_TRIES = [
+    [4, false, 0, 0], [6, false, 0, 0], [4, true, 0, 0],
+    [4, false, -4, 0], [4, false, 4, 0],
+    [4, false, 0, -0.04], [5, false, 0, -0.08], [4, false, 0, -0.12], [6, false, 0, -0.12]
+  ];
 
-  function capCell(box, c, r) {
-    var cw = box.w / cap.cols, ch = box.h / cap.rows;
-    return { x: box.x + c * cw, y: box.y + r * ch, w: cw, h: ch };
+  function capReadOne(worker, frame, rect, tries, cellW) {
+    var i = 0, votes = {};
+    var w = cellW || rect.w;
+    function next() {
+      if (i >= tries.length) return Promise.resolve(pick());
+      var v = tries[i++];
+      var dx = (v[3] || 0) * w;
+      var cv = capCrop(frame, rect.x + dx, rect.y + v[2], rect.w - dx, rect.h, v[0], v[1]);
+      return worker.recognize(cv).then(function (res) {
+        var txt = (res.data.text || '').replace(/\s+/g, ' ').trim();
+        var sec = capParse(txt);
+        if (sec != null) {
+          var k = String(sec);
+          if (!votes[k]) votes[k] = { sec: sec, text: txt, n: 0, digits: 0 };
+          votes[k].n++;
+          var d = (txt.match(/\d/g) || []).length;
+          if (d > votes[k].digits) { votes[k].digits = d; votes[k].text = txt; }
+        }
+        return next();
+      }, next);
+    }
+    function pick() {
+      var best = null;
+      for (var k in votes) {
+        var v = votes[k];
+        if (!best || v.n > best.n || (v.n === best.n && v.digits > best.digits)) best = v;
+      }
+      return best ? { sec: best.sec, text: best.text } : { sec: null, text: '' };
+    }
+    return next();
   }
   // 카드 안에서 글자가 있는 자리 (카드 높이에 대한 비율로 잡아 창 크기가 바뀌어도 따라간다)
-  function capTimeRect(cell) { return { x: cell.x + 4, y: cell.y + cell.h * 0.868 - 18, w: cell.w * 0.72, h: 36 }; }
+  function capTimeRect(cell) { return { x: cell.x, y: cell.y + cell.h * 0.868 - 18, w: cell.w * 0.76, h: 36 }; }
   function capNameRect(cell) { return { x: cell.x + cell.w * 0.05, y: cell.y + cell.h * 0.025, w: cell.w * 0.80, h: cell.h * 0.14 }; }
 
   // 카드 제목("Lv.35 크리소파고스")에서 보스 이름을 읽는다.
   // 게임 즐겨찾기가 자주 바뀌므로, 이름을 읽어 두면 칸이 바뀌어도 바로 따라간다.
-  function capReadOne(worker, frame, rect, tries) {
-    var i = 0;
-    function next() {
-      if (i >= tries.length) return Promise.resolve({ sec: null, text: '' });
-      var v = tries[i++];
-      var cv = capCrop(frame, rect.x, rect.y + v[2], rect.w, rect.h, v[0], v[1]);
-      return worker.recognize(cv).then(function (res) {
-        var txt = (res.data.text || '').replace(/\s+/g, ' ').trim();
-        var sec = capParse(txt);
-        if (sec != null) return { sec: sec, text: txt };
-        return next();
-      });
-    }
-    return next();
-  }
 
   // 게임이 현황판을 창 가운데에 같은 비율로 띄우므로, 창 크기와 상관없이
   // 이 비율이면 대개 카드가 들어온다. 어긋나면 아래에서 조금씩 밀어가며 찾는다.
@@ -1304,28 +1326,38 @@
   function capAbsBox(frame) { return capAbsOf(cap.box, frame); }
 
   // 후보 영역에서 첫 칸이 읽히면 맞는 자리로 본다
+  // 한 칸만 읽혀도 맞는 자리로 보면, 조금 어긋난 자리를 잡아 앞자리가 잘린다.
+  // 몇 칸이나 읽히는지 세어서 가장 많이 읽히는 자리를 쓴다.
   function capProbe(worker, frame, box) {
-    var abs = capAbsOf(box, frame);
-    return capReadOne(worker, frame, capTimeRect(capCell(abs, 0, 0)), CAP_TRIES.slice(0, 2)).then(function (a) {
-      if (a.sec != null) return true;
-      return capReadOne(worker, frame, capTimeRect(capCell(abs, 1 % cap.cols, 0)), CAP_TRIES.slice(0, 2))
-        .then(function (b) { return b.sec != null; });
-    });
+    var abs = capAbsOf(box, frame), n = Math.min(3, cap.cols * cap.rows), i = 0, got = 0;
+    function step() {
+      if (i >= n) return Promise.resolve(got);
+      var c = capCell(abs, i % cap.cols, Math.floor(i / cap.cols));
+      i++;
+      return capReadOne(worker, frame, capTimeRect(c), CAP_TRIES.slice(0, 2), c.w).then(function (r) {
+        if (r.sec != null) got++;
+        return step();
+      });
+    }
+    return step();
   }
 
   function capFind(onProgress) {
     var frame = capFrame();
     if (!frame) return Promise.reject(new Error('캡쳐 화면이 없습니다'));
     return capWorker(onProgress).then(function (worker) {
-      var list = capCandidates(), k = 0;
+      var list = capCandidates(), k = 0, best = null, bestN = 0;
       function step() {
-        if (k >= list.length) return Promise.resolve(false);
+        if (k >= list.length || bestN >= 3) {
+          if (!best) return Promise.resolve(false);
+          cap.box = best; capSave();
+          return Promise.resolve(true);
+        }
         var box = list[k++];
         if (onProgress) onProgress('현황판 찾는 중… ' + k + '/' + list.length);
-        return capProbe(worker, frame, box).then(function (ok) {
-          if (!ok) return step();
-          cap.box = box; capSave();
-          return true;
+        return capProbe(worker, frame, box).then(function (n) {
+          if (n > bestN) { bestN = n; best = box; }
+          return step();
         });
       }
       return step();
@@ -1386,7 +1418,7 @@
         var i = k++;
         var cell = capCell(box, i % cap.cols, Math.floor(i / cap.cols));
         if (onProgress) onProgress('읽는 중… ' + (i + 1) + '/' + n);
-        return capReadOne(worker, frame, capTimeRect(cell), CAP_TRIES).then(function (r) {
+        return capReadOne(worker, frame, capTimeRect(cell), CAP_TRIES, cell.w).then(function (r) {
           if (r.sec == null) return step();          // 빈 칸
           var h = { i: i, sec: r.sec, text: r.text, exact: /초/.test(r.text), at: at };
           hits.push(h);
