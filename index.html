@@ -1297,6 +1297,10 @@
     return next();
   }
   // 카드 안에서 글자가 있는 자리 (카드 높이에 대한 비율로 잡아 창 크기가 바뀌어도 따라간다)
+  function capCell(box, c, r) {
+    var cw = box.w / cap.cols, ch = box.h / cap.rows;
+    return { x: box.x + c * cw, y: box.y + r * ch, w: cw, h: ch };
+  }
   function capTimeRect(cell) { return { x: cell.x, y: cell.y + cell.h * 0.868 - 18, w: cell.w * 0.76, h: 36 }; }
   function capNameRect(cell) { return { x: cell.x + cell.w * 0.05, y: cell.y + cell.h * 0.025, w: cell.w * 0.80, h: cell.h * 0.14 }; }
 
